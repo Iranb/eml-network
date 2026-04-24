@@ -194,6 +194,54 @@ def _ablation_table(rows: Iterable[Dict[str, str]]) -> list[str]:
     return lines
 
 
+def _comparison_table(
+    rows: Iterable[Dict[str, str]],
+    predicate: Any,
+    reference_run_id: str | None = None,
+) -> list[str]:
+    selected = [row for row in rows if predicate(row)]
+    lines = [
+        "| run_id | status | model | best | final | delta vs ref | loss | time sec | notes |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |",
+    ]
+    if not selected:
+        return ["MISSING"]
+    reference_value: float | None = None
+    if reference_run_id:
+        for row in selected:
+            if row.get("run_id") == reference_run_id:
+                reference_value = _float(row, "best_metric")
+                break
+    if reference_value is None:
+        completed = [row for row in selected if row.get("status") == "COMPLETED" and _float(row, "best_metric") is not None]
+        if completed:
+            reference_value = _float(completed[0], "best_metric")
+    for row in selected:
+        metrics = _metrics(row)
+        best = _float(row, "best_metric")
+        delta = "" if best is None or reference_value is None else best - reference_value
+        loss = metrics.get("final_train_loss", metrics.get("train_loss", ""))
+        notes = row.get("reason", "")
+        if row.get("status") == "COMPLETED":
+            early = metrics.get("early_stop_triggered", "")
+            if early != "":
+                notes = f"early_stop={early}"
+        lines.append(
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
+                row.get("run_id", ""),
+                row.get("status", ""),
+                row.get("model_name", ""),
+                row.get("best_metric", ""),
+                row.get("final_metric", ""),
+                f"{delta:.4f}" if isinstance(delta, float) else delta,
+                f"{loss:.4f}" if isinstance(loss, (int, float)) else loss,
+                row.get("total_train_time_sec", ""),
+                notes,
+            )
+        )
+    return lines
+
+
 def _history_snippets(rows: Iterable[Dict[str, str]], limit: int = 5) -> list[str]:
     lines: list[str] = []
     for row in rows:
@@ -340,7 +388,45 @@ def generate_validation_report(
     lines.append("## 7. Ablation Results")
     lines.append("")
     lines.append("### Responsibility / Null / Update Probes")
-    lines.extend(_result_table(rows, "mechanism"))
+    lines.extend(
+        _comparison_table(
+            rows,
+            lambda row: row.get("task_name") == "mechanism_probe",
+            "ablation_gate_sigmoid_seed0",
+        )
+    )
+    lines.append("")
+    lines.append("Interpretation: these probes validate finite propagation and diagnostic behavior. They do not by themselves prove downstream task quality.")
+    lines.append("")
+    lines.append("### Image Representation / Attractor / Warmup / Window")
+    lines.extend(
+        _comparison_table(
+            rows,
+            lambda row: row.get("task_name") == "image_synthetic",
+            "ablation_image_cnn_eml_workers0",
+        )
+    )
+    lines.append("")
+    lines.append("### Text Local Window")
+    lines.extend(
+        _comparison_table(
+            rows,
+            lambda row: row.get("task_name") == "text_synthetic",
+            "ablation_text_eff_window8_workers0",
+        )
+    )
+    lines.append("")
+    lines.append("### CIFAR Medium")
+    lines.extend(
+        _comparison_table(
+            rows,
+            lambda row: row.get("task_name") == "image_cifar",
+            "cifar_cnn_eml",
+        )
+    )
+    lines.append("")
+    lines.append("### Failed And Not Run Cells")
+    lines.extend(_status_table([row for row in rows if row.get("status") != "COMPLETED"]))
     lines.append("")
     lines.append("### All Ablation Cells")
     lines.extend(_ablation_table(rows))
