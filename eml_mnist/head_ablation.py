@@ -102,8 +102,9 @@ class LinearHead(nn.Module):
         z: torch.Tensor,
         labels: torch.Tensor | None = None,
         warmup_eta: float | torch.Tensor = 1.0,
+        resistance_target: torch.Tensor | None = None,
     ) -> Dict[str, torch.Tensor]:
-        del warmup_eta
+        del warmup_eta, resistance_target
         logits = self.linear(z)
         out = {"logits": logits, "probs": _probs(logits)}
         out.update(_margin_diagnostics(out, labels))
@@ -131,8 +132,9 @@ class MLPHead(nn.Module):
         z: torch.Tensor,
         labels: torch.Tensor | None = None,
         warmup_eta: float | torch.Tensor = 1.0,
+        resistance_target: torch.Tensor | None = None,
     ) -> Dict[str, torch.Tensor]:
-        del warmup_eta
+        del warmup_eta, resistance_target
         logits = self.net(z)
         out = {"logits": logits, "probs": _probs(logits)}
         out.update(_margin_diagnostics(out, labels))
@@ -160,8 +162,9 @@ class CosinePrototypeHead(nn.Module):
         z: torch.Tensor,
         labels: torch.Tensor | None = None,
         warmup_eta: float | torch.Tensor = 1.0,
+        resistance_target: torch.Tensor | None = None,
     ) -> Dict[str, torch.Tensor]:
-        del warmup_eta
+        del warmup_eta, resistance_target
         normalized_z = F.normalize(z, dim=-1)
         normalized_prototypes = F.normalize(self.prototypes, dim=-1)
         similarity = normalized_z @ normalized_prototypes.t()
@@ -205,6 +208,7 @@ class _BaseEMLPrototypeHead(nn.Module):
         self.raw_class_resistance = nn.Parameter(
             torch.full((num_classes,), inverse_softplus(0.2), dtype=torch.float32)
         )
+        self.resistance_supervision_scale = 0.0
         self.eml = EMLUnit(dim=num_classes, clip_value=clip_value, init_gamma=0.1, init_lambda=1.0, init_bias=0.0)
         nn.init.normal_(self.prototypes, mean=0.0, std=0.05)
 
@@ -232,6 +236,7 @@ class _BaseEMLPrototypeHead(nn.Module):
         z: torch.Tensor,
         labels: torch.Tensor | None = None,
         warmup_eta: float | torch.Tensor = 1.0,
+        resistance_target: torch.Tensor | None = None,
     ) -> Dict[str, torch.Tensor]:
         normalized_z = F.normalize(z, dim=-1)
         normalized_prototypes = F.normalize(self.prototypes, dim=-1)
@@ -265,6 +270,17 @@ class _BaseEMLPrototypeHead(nn.Module):
             "eml_lambda": eml_out["lambda_fp32"],
         }
         out.update(_margin_diagnostics(out, labels))
+        if labels is not None and torch.is_tensor(out.get("positive_resistance")):
+            positive_resistance = out["positive_resistance"]
+        else:
+            positive_resistance = resistance.mean(dim=-1)
+        out["resistance_score"] = positive_resistance
+        if resistance_target is not None:
+            out["resistance_target"] = resistance_target.reshape(-1)
+            out["resistance_supervision_error"] = positive_resistance - resistance_target.reshape(-1).to(
+                device=positive_resistance.device,
+                dtype=positive_resistance.dtype,
+            )
         return out
 
 
@@ -280,6 +296,12 @@ class EMLPrototypeHeadCenteredAmbiguity(_BaseEMLPrototypeHead):
     ambiguity_mode = "centered"
 
 
+class EMLPrototypeHeadSupervisedResistance(EMLPrototypeHeadCenteredAmbiguity):
+    def __init__(self, *args: Any, resistance_supervision_scale: float = 1.0, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.resistance_supervision_scale = float(resistance_supervision_scale)
+
+
 HEADS = {
     "linear": LinearHead,
     "mlp": MLPHead,
@@ -287,6 +309,7 @@ HEADS = {
     "eml_no_ambiguity": EMLPrototypeHeadNoAmbiguity,
     "eml_raw_ambiguity": EMLPrototypeHeadRawAmbiguity,
     "eml_centered_ambiguity": EMLPrototypeHeadCenteredAmbiguity,
+    "eml_supervised_resistance": EMLPrototypeHeadSupervisedResistance,
 }
 
 
@@ -329,6 +352,7 @@ __all__ = [
     "EMLPrototypeHeadCenteredAmbiguity",
     "EMLPrototypeHeadNoAmbiguity",
     "EMLPrototypeHeadRawAmbiguity",
+    "EMLPrototypeHeadSupervisedResistance",
     "HEADS",
     "LinearHead",
     "MLPHead",

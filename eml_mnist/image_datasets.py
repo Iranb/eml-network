@@ -209,6 +209,10 @@ class SyntheticShapeEnergyDataset(Dataset):
         target_type: str = "shape",
         include_background_clutter: bool = True,
         include_mask: bool = True,
+        forced_noise_name: str | None = None,
+        forced_occlusion_name: str | None = None,
+        forced_position_name: str | None = None,
+        forced_clutter_flag: int | None = None,
     ) -> None:
         if size <= 0 or image_size <= 0:
             raise ValueError("size and image_size must be positive")
@@ -221,6 +225,18 @@ class SyntheticShapeEnergyDataset(Dataset):
         self.target_type = target_type
         self.include_background_clutter = include_background_clutter
         self.include_mask = include_mask
+        if forced_noise_name is not None and forced_noise_name not in NOISE_LEVELS:
+            raise ValueError(f"forced_noise_name must be one of {tuple(NOISE_LEVELS)}")
+        if forced_occlusion_name is not None and forced_occlusion_name not in OCCLUSIONS:
+            raise ValueError(f"forced_occlusion_name must be one of {tuple(OCCLUSIONS)}")
+        if forced_position_name is not None and forced_position_name not in POSITIONS:
+            raise ValueError(f"forced_position_name must be one of {tuple(POSITIONS)}")
+        if forced_clutter_flag is not None and forced_clutter_flag not in (0, 1):
+            raise ValueError("forced_clutter_flag must be 0 or 1")
+        self.forced_noise_name = forced_noise_name
+        self.forced_occlusion_name = forced_occlusion_name
+        self.forced_position_name = forced_position_name
+        self.forced_clutter_flag = forced_clutter_flag
         self.yy, self.xx = _meshgrid(image_size)
         self.color_names = list(COLORS.keys())
         self.num_classes = {
@@ -253,15 +269,17 @@ class SyntheticShapeEnergyDataset(Dataset):
         position_index = int(torch.randint(0, len(POSITIONS), (1,), generator=generator).item())
         noise_index = int(torch.randint(0, len(NOISE_LEVELS), (1,), generator=generator).item())
         occlusion_index = int(torch.randint(0, len(OCCLUSIONS), (1,), generator=generator).item())
-        clutter_flag = int(torch.randint(0, 2, (1,), generator=generator).item()) if self.include_background_clutter else 0
+        clutter_flag = self.forced_clutter_flag
+        if clutter_flag is None:
+            clutter_flag = int(torch.randint(0, 2, (1,), generator=generator).item()) if self.include_background_clutter else 0
 
         shape_name = SHAPES[shape_index]
         color_name = self.color_names[color_index]
         texture_name = TEXTURES[texture_index]
         size_name = list(SIZES.keys())[size_index]
-        position_name = POSITIONS[position_index]
-        noise_name = list(NOISE_LEVELS.keys())[noise_index]
-        occlusion_name = OCCLUSIONS[occlusion_index]
+        position_name = self.forced_position_name or POSITIONS[position_index]
+        noise_name = self.forced_noise_name or list(NOISE_LEVELS.keys())[noise_index]
+        occlusion_name = self.forced_occlusion_name or OCCLUSIONS[occlusion_index]
 
         cx, cy = _center_for_position(position_name, generator)
         scale = SIZES[size_name]
@@ -312,7 +330,82 @@ class SyntheticShapeEnergyDataset(Dataset):
         return payload
 
 
+class CIFARCorruptionDataset(Dataset):
+    """Deterministic clean/noisy/occluded wrapper for CIFAR-style tensor datasets."""
+
+    def __init__(
+        self,
+        base_dataset: Dataset,
+        mode: str = "clean",
+        seed: int = 0,
+        noise_std: float = 0.25,
+        occlusion_frac: float = 0.33,
+    ) -> None:
+        if mode not in {"clean", "noisy", "occluded", "mixed"}:
+            raise ValueError("mode must be one of clean, noisy, occluded, mixed")
+        if noise_std < 0.0:
+            raise ValueError("noise_std must be non-negative")
+        if not 0.0 <= occlusion_frac <= 0.95:
+            raise ValueError("occlusion_frac must be in [0, 0.95]")
+        self.base_dataset = base_dataset
+        self.mode = mode
+        self.seed = seed
+        self.noise_std = float(noise_std)
+        self.occlusion_frac = float(occlusion_frac)
+
+    def __len__(self) -> int:
+        return len(self.base_dataset)
+
+    def _choose_mode(self, index: int) -> str:
+        if self.mode != "mixed":
+            return self.mode
+        generator = torch.Generator().manual_seed(self.seed + index)
+        choice = int(torch.randint(0, 3, (1,), generator=generator).item())
+        return ("clean", "noisy", "occluded")[choice]
+
+    def _apply_noise(self, image: torch.Tensor, generator: torch.Generator) -> tuple[torch.Tensor, float]:
+        noise = torch.randn(image.shape, generator=generator, dtype=image.dtype)
+        return (image + self.noise_std * noise).clamp(0.0, 1.0), 1.0
+
+    def _apply_occlusion(self, image: torch.Tensor, generator: torch.Generator) -> tuple[torch.Tensor, float]:
+        _, height, width = image.shape
+        occ_h = max(1, int(round(height * self.occlusion_frac)))
+        occ_w = max(1, int(round(width * self.occlusion_frac)))
+        top = int(torch.randint(0, height - occ_h + 1, (1,), generator=generator).item())
+        left = int(torch.randint(0, width - occ_w + 1, (1,), generator=generator).item())
+        image = image.clone()
+        image[:, top : top + occ_h, left : left + occ_w] *= 0.1
+        return image, float((occ_h * occ_w) / float(height * width))
+
+    def __getitem__(self, index: int) -> Dict[str, torch.Tensor | int]:
+        sample = self.base_dataset[index]
+        if isinstance(sample, dict):
+            image = sample["image"].clone().float()
+            label = int(sample["label"])
+        else:
+            image, label = sample
+            image = image.clone().float()
+            label = int(label)
+        generator = torch.Generator().manual_seed(self.seed + index)
+        mode = self._choose_mode(index)
+        noise_level = 0.0
+        occlusion_level = 0.0
+        if mode == "noisy":
+            image, noise_level = self._apply_noise(image, generator)
+        elif mode == "occluded":
+            image, occlusion_level = self._apply_occlusion(image, generator)
+        resistance_target = min(1.0, 0.5 * noise_level + 0.5 * occlusion_level)
+        return {
+            "image": image,
+            "label": label,
+            "noise_level": torch.tensor(noise_level, dtype=torch.float32),
+            "occlusion_level": torch.tensor(occlusion_level, dtype=torch.float32),
+            "resistance_target": torch.tensor(resistance_target, dtype=torch.float32),
+        }
+
+
 __all__ = [
+    "CIFARCorruptionDataset",
     "COLORS",
     "SHAPES",
     "SyntheticShapeDataset",

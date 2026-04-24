@@ -33,3 +33,18 @@ def test_centered_eml_head_returns_drive_resistance_diagnostics() -> None:
     assert torch.allclose(out["ambiguity_weight"], torch.full_like(out["ambiguity_weight"], 0.25))
     assert torch.isfinite(out["positive_drive"]).all()
     assert torch.isfinite(out["hard_negative_resistance"]).all()
+
+
+def test_supervised_resistance_head_accepts_target() -> None:
+    head = build_head("eml_supervised_resistance", input_dim=10, num_classes=4, hidden_dim=20)
+    features = torch.randn(5, 10)
+    labels = torch.tensor([0, 1, 2, 3, 1])
+    target = torch.linspace(0.0, 1.0, 5)
+
+    out = head(features, labels=labels, warmup_eta=0.5, resistance_target=target)
+
+    assert out["logits"].shape == (5, 4)
+    assert out["resistance_score"].shape == (5,)
+    assert out["resistance_target"].shape == (5,)
+    assert out["resistance_supervision_error"].shape == (5,)
+    assert torch.isfinite(out["resistance_score"]).all()

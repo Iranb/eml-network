@@ -1,0 +1,13 @@
+{
+  "batch_size": 64,
+  "dataset_name": "cifar10",
+  "device": "cuda",
+  "experiment_type": "frozen_features_uncertainty",
+  "mode": "uncertainty_benchmark",
+  "model_name": "eml_centered_ambiguity",
+  "num_workers": 0,
+  "seed": 1,
+  "task_name": "image_uncertainty_selective_classification",
+  "test_size": 1024,
+  "train_size": 4096
+}

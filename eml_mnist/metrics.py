@@ -91,6 +91,67 @@ def pearson_corr(x: torch.Tensor, y: torch.Tensor) -> float:
     return float((x @ y / denom).cpu().item())
 
 
+def binary_auroc(scores: torch.Tensor, labels: torch.Tensor) -> float:
+    scores = scores.detach().float().reshape(-1)
+    labels = labels.detach().reshape(-1).to(dtype=torch.long)
+    if scores.numel() != labels.numel() or scores.numel() == 0:
+        return float("nan")
+    positive = labels == 1
+    negative = labels == 0
+    n_pos = int(positive.sum().item())
+    n_neg = int(negative.sum().item())
+    if n_pos == 0 or n_neg == 0:
+        return float("nan")
+    order = torch.argsort(scores, stable=True)
+    ranks = torch.empty_like(order, dtype=torch.float32)
+    ranks[order] = torch.arange(1, scores.numel() + 1, device=scores.device, dtype=torch.float32)
+    pos_rank_sum = ranks[positive].sum()
+    auc = (pos_rank_sum - n_pos * (n_pos + 1) / 2.0) / float(n_pos * n_neg)
+    return float(auc.cpu().item())
+
+
+def selective_risk_at_coverage(correct: torch.Tensor, acceptance: torch.Tensor, coverage: float) -> float:
+    correct = correct.detach().bool().reshape(-1)
+    acceptance = acceptance.detach().float().reshape(-1)
+    if correct.numel() != acceptance.numel() or correct.numel() == 0:
+        return float("nan")
+    coverage = float(max(0.0, min(1.0, coverage)))
+    keep = max(1, int(math.ceil(correct.numel() * coverage)))
+    order = torch.argsort(acceptance, descending=True, stable=True)
+    selected = correct[order[:keep]].float()
+    return float((1.0 - selected.mean()).cpu().item())
+
+
+def selective_risk_curve(
+    correct: torch.Tensor,
+    acceptance: torch.Tensor,
+    coverages: tuple[float, ...] = (1.0, 0.9, 0.8, 0.7, 0.5),
+) -> Dict[str, float]:
+    results: Dict[str, float] = {}
+    for coverage in coverages:
+        key = f"risk_at_{int(round(coverage * 100)):02d}_coverage"
+        results[key] = selective_risk_at_coverage(correct, acceptance, coverage)
+    return results
+
+
+def area_under_risk_coverage_curve(
+    correct: torch.Tensor,
+    acceptance: torch.Tensor,
+    steps: int = 50,
+) -> float:
+    correct = correct.detach().bool().reshape(-1)
+    acceptance = acceptance.detach().float().reshape(-1)
+    if correct.numel() != acceptance.numel() or correct.numel() == 0:
+        return float("nan")
+    coverages = torch.linspace(1.0 / steps, 1.0, steps, device=acceptance.device)
+    risks = torch.tensor(
+        [selective_risk_at_coverage(correct, acceptance, float(c.item())) for c in coverages],
+        device=acceptance.device,
+        dtype=torch.float32,
+    )
+    return float(torch.trapz(risks, coverages).cpu().item())
+
+
 def finite_summary(values: Dict[str, torch.Tensor]) -> Dict[str, float]:
     total = 0
     bad = 0
@@ -103,6 +164,8 @@ def finite_summary(values: Dict[str, torch.Tensor]) -> Dict[str, float]:
 
 
 __all__ = [
+    "area_under_risk_coverage_curve",
+    "binary_auroc",
     "brier_score",
     "bits_per_token",
     "classification_accuracy",
@@ -111,6 +174,8 @@ __all__ = [
     "negative_log_likelihood",
     "pearson_corr",
     "perplexity",
+    "selective_risk_at_coverage",
+    "selective_risk_curve",
     "token_accuracy",
     "topk_accuracy",
 ]
