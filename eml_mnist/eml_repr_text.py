@@ -81,6 +81,11 @@ class EfficientEMLTextEncoder(nn.Module):
         causal_window_size: int = 16,
         chunk_size: int = 8,
         pad_id: int = 0,
+        enable_composition: bool = True,
+        enable_attractor: bool = True,
+        responsibility_mode: str = "standard",
+        evidence_threshold: float = 0.0,
+        precision_old_confidence_init: float = 5.0,
         clip_value: float = 3.0,
     ) -> None:
         super().__init__()
@@ -89,6 +94,8 @@ class EfficientEMLTextEncoder(nn.Module):
         self.state_dim = state_dim
         self.representation_dim = representation_dim or state_dim
         self.pad_id = pad_id
+        self.enable_composition = bool(enable_composition)
+        self.enable_attractor = bool(enable_attractor)
         self.sensor = _TextSensor(vocab_size, embed_dim, state_dim, pad_id)
         self.evidence = EMLLocalEvidenceEncoder(
             input_dim=state_dim,
@@ -103,6 +110,9 @@ class EfficientEMLTextEncoder(nn.Module):
             mode="text",
             window_size=causal_window_size,
             clip_value=clip_value,
+            responsibility_mode=responsibility_mode,
+            evidence_threshold=evidence_threshold,
+            precision_old_confidence_init=precision_old_confidence_init,
         )
         self.composition = EMLComposition(
             state_dim=state_dim,
@@ -111,11 +121,15 @@ class EfficientEMLTextEncoder(nn.Module):
             region_size=chunk_size,
             clip_value=clip_value,
         )
-        self.attractor = EMLAttractorMemory(
-            state_dim=state_dim,
-            hidden_dim=hidden_dim,
-            num_attractors=num_attractors,
-            clip_value=clip_value,
+        self.attractor = (
+            EMLAttractorMemory(
+                state_dim=state_dim,
+                hidden_dim=hidden_dim,
+                num_attractors=num_attractors,
+                clip_value=clip_value,
+            )
+            if enable_attractor
+            else None
         )
         self.readout = EMLRepresentationReadout(
             state_dim=state_dim,
@@ -149,20 +163,49 @@ class EfficientEMLTextEncoder(nn.Module):
             warmup_eta=warmup_eta,
         )
         sequence_states = propagation["state"]
-        composition = self.composition(sequence_states, padding_mask=padding_mask, warmup_eta=warmup_eta)
-        chunk_states = composition["parent_state"]
-        chunk_mask = composition["parent_activation"] > 0.0
-        attractor = self.attractor(chunk_states, padding_mask=chunk_mask, warmup_eta=warmup_eta)
-        readout = self.readout(attractor["attractor_states"], warmup_eta=warmup_eta)
+        if self.enable_composition:
+            composition = self.composition(sequence_states, padding_mask=padding_mask, warmup_eta=warmup_eta)
+            chunk_states = composition["parent_state"]
+            chunk_mask = composition["parent_activation"] > 0.0
+            composition_diagnostics = composition["diagnostics"]  # type: ignore[index]
+        else:
+            composition = {
+                "parent_state": sequence_states,
+                "parent_activation": padding_mask.to(dtype=sequence_states.dtype),
+                "diagnostics": {},
+            }
+            chunk_states = sequence_states
+            chunk_mask = padding_mask.bool()
+            composition_diagnostics = {}
+        if self.attractor is not None:
+            attractor = self.attractor(chunk_states, padding_mask=chunk_mask, warmup_eta=warmup_eta)
+            readout_states = attractor["attractor_states"]
+            attractor_states = attractor["attractor_states"]
+            attractor_weights = attractor["attractor_weights"]
+            attractor_activation = attractor["update_strength"]
+            attractor_diagnostics = attractor["diagnostics"]  # type: ignore[index]
+        else:
+            attractor = {
+                "attractor_states": chunk_states,
+                "attractor_weights": torch.empty(chunk_states.size(0), 0, chunk_states.size(1), device=input_ids.device, dtype=chunk_states.dtype),
+                "update_strength": chunk_mask.to(dtype=chunk_states.dtype),
+                "diagnostics": {},
+            }
+            readout_states = chunk_states
+            attractor_states = chunk_states
+            attractor_weights = attractor["attractor_weights"]
+            attractor_activation = attractor["update_strength"]
+            attractor_diagnostics = {}
+        readout = self.readout(readout_states, warmup_eta=warmup_eta)
         diagnostics = self._merge_diagnostics(
             propagation["diagnostics"],
-            composition["diagnostics"],  # type: ignore[arg-type]
-            attractor["diagnostics"],  # type: ignore[arg-type]
+            composition_diagnostics,  # type: ignore[arg-type]
+            attractor_diagnostics,  # type: ignore[arg-type]
         )
         diagnostics.update(_stats("readout_weight", readout["weights"]))
         diagnostics["sequence_length"] = torch.tensor(float(input_ids.size(1)), device=input_ids.device)
         diagnostics["chunk_count"] = torch.tensor(float(chunk_states.size(1)), device=input_ids.device)
-        diagnostics["num_attractors"] = torch.tensor(float(attractor["attractor_states"].size(1)), device=input_ids.device)
+        diagnostics["num_attractors"] = torch.tensor(float(attractor_states.size(1) if self.attractor is not None else 0), device=input_ids.device)
         diagnostics["valid_token_rate"] = padding_mask.float().mean().detach()
         return {
             "sequence_states": sequence_states,
@@ -170,10 +213,10 @@ class EfficientEMLTextEncoder(nn.Module):
             "local_queries": sequence_states,
             "chunk_states": chunk_states,
             "chunk_hypotheses": chunk_states,
-            "attractor_states": attractor["attractor_states"],
-            "global_slot_features": attractor["attractor_states"],
-            "attractor_weights": attractor["attractor_weights"],
-            "attractor_activation": attractor["update_strength"],
+            "attractor_states": attractor_states,
+            "global_slot_features": attractor_states,
+            "attractor_weights": attractor_weights,
+            "attractor_activation": attractor_activation,
             "representation": readout["representation"],
             "readout_weights": readout["weights"],
             "drive": readout["drive"],

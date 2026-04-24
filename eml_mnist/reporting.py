@@ -130,10 +130,16 @@ def _diagnostics_table(rows: Iterable[Dict[str, str]]) -> list[str]:
         "update_gate_mean",
         "attractor_diversity",
         "ambiguity_mean",
+        "ambiguity_weight_mean",
         "sample_uncertainty_mean",
     ]
-    lines = ["| run_id | model | " + " | ".join(keys) + " |"]
-    lines.append("| --- | --- | " + " | ".join(["---:"] * len(keys)) + " |")
+    metric_keys = [
+        "resistance_noise_corr",
+        "resistance_occlusion_corr",
+        "corruption_resistance_corr",
+    ]
+    lines = ["| run_id | model | " + " | ".join(keys + metric_keys) + " |"]
+    lines.append("| --- | --- | " + " | ".join(["---:"] * (len(keys) + len(metric_keys))) + " |")
     completed = [row for row in rows if row.get("status") == "COMPLETED"]
     if not completed:
         lines.append("| MISSING | MISSING | " + " | ".join(["MISSING"] * len(keys)) + " |")
@@ -141,9 +147,13 @@ def _diagnostics_table(rows: Iterable[Dict[str, str]]) -> list[str]:
     for row in completed:
         summary = _read_json(Path(row.get("run_dir", "")) / "summary.json")
         diagnostics = summary.get("final_diagnostics", {})
+        metrics = _metrics(row)
         values = []
         for key in keys:
             value = diagnostics.get(key, "")
+            values.append(f"{value:.4f}" if isinstance(value, (int, float)) else str(value))
+        for key in metric_keys:
+            value = metrics.get(key, "")
             values.append(f"{value:.4f}" if isinstance(value, (int, float)) else str(value))
         lines.append("| {} | {} | {} |".format(row.get("run_id", ""), row.get("model_name", ""), " | ".join(values)))
     return lines
@@ -318,11 +328,17 @@ def generate_validation_report(
     lines.append("- Best image result: " + _best(rows, "image"))
     lines.append("- Best text result: " + _best(rows, "text"))
     lines.append("- Strongest baseline: " + _strongest_baseline(rows))
-    lines.append("- Responsibility evidence weighting: see mechanism probe and ablation tables; unrun cells remain marked.")
-    lines.append("- Precision update: see update probe rows; model-quality conclusions need medium runs.")
-    lines.append("- Attractor memory: present in efficient paths; no-attractor comparison is not yet standardized unless a run row exists.")
+    lines.append("- Responsibility evidence weighting: see mechanism probe and downstream ablation tables.")
+    lines.append("- Precision update: see update probe rows and text/image ablation cells; model-quality conclusions need longer runs.")
+    if any(row.get("run_id") == "ablation_no_attractor" and row.get("status") == "COMPLETED" for row in rows):
+        lines.append("- Attractor memory: direct no-attractor comparison is present in this report.")
+    else:
+        lines.append("- Attractor memory: no-attractor comparison is MISSING unless a completed row exists below.")
     lines.append(f"- Major failure modes: {len(failed)} failed runs and {len(not_run)} not-run cells are recorded in the status table.")
-    lines.append("- Recommended next step: standardize the remaining NOT RUN switches, then repeat the best CIFAR and text runs across seeds.")
+    if not_run:
+        lines.append("- Recommended next step: standardize the remaining NOT RUN switches, then repeat the best image/text runs across seeds.")
+    else:
+        lines.append("- Recommended next step: rerun the most promising synthetic cells for more steps/seeds, then repeat CIFAR and text-medium validation.")
     lines.append("")
     lines.append("## 2. Repository and Environment")
     lines.append("")
@@ -412,7 +428,7 @@ def generate_validation_report(
         _comparison_table(
             rows,
             lambda row: row.get("task_name") == "text_synthetic",
-            "ablation_text_eff_window8_workers0",
+            "ablation_text_window8_baseline",
         )
     )
     lines.append("")
@@ -431,7 +447,10 @@ def generate_validation_report(
     lines.append("### All Ablation Cells")
     lines.extend(_ablation_table(rows))
     lines.append("")
-    lines.append("Other ablation axes remain `NOT RUN` unless listed in the status table.")
+    if not_run:
+        lines.append("Other ablation axes remain `NOT RUN` when listed in the status table.")
+    else:
+        lines.append("No planned ablation cells in this run were recorded as `NOT RUN`.")
     lines.append("")
     lines.append("## 8. EML Diagnostics")
     lines.append("")
@@ -463,9 +482,12 @@ def generate_validation_report(
     lines.append("")
     lines.append("## 12. Conclusions")
     lines.append("")
-    lines.append("- Current evidence is preliminary until ablation and medium modes are run with repeat seeds.")
-    lines.append("- The validation framework now records enough data to answer whether EML is acting as representation trunk or only as head/gate.")
-    lines.append("- The exact next experiment is GPU ablation mode with at least two seeds, followed by CIFAR medium for `cnn_eml`, `pure_eml_v2`, and `EfficientEMLImageClassifier`.")
+    lines.append("- Current evidence remains preliminary when runs are short or single-seed.")
+    lines.append("- Use the synthetic image and text ablation tables to identify mechanisms worth longer training before making CIFAR claims.")
+    if any(row.get("task_name") == "image_cifar" for row in rows):
+        lines.append("- The exact next experiment is repeat-seed CIFAR validation for the best efficient image setting and the strongest CNN baseline.")
+    else:
+        lines.append("- The exact next experiment is longer GPU ablation with the completed switches, followed by CIFAR medium for `cnn_eml`, `pure_eml_v2`, and `EfficientEMLImageClassifier`.")
     lines.append("")
     lines.append("## 13. Raw Artifacts")
     lines.append("")

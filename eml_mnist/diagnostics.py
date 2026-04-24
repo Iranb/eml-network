@@ -83,6 +83,7 @@ def collect_eml_diagnostics(outputs: Mapping[str, Any]) -> Dict[str, float]:
         "update_norm": [],
         "active_route_strength": [],
         "ambiguity": [],
+        "ambiguity_weight": [],
         "sample_uncertainty": [],
         "prototype_diversity_penalty": [],
         "attractor_activation": [],

@@ -1,0 +1,2 @@
+run_id,timestamp,status,reason,mode,task_name,model_name,dataset_name,seed,device,git_commit,hostname,python_version,torch_version,torchvision_version,cuda_available,num_params,trainable_params,total_train_time_sec,best_metric,final_metric,run_dir,metrics_json
+ablation_cuda_unavailable,2026-04-24T07:49:02Z,NOT RUN,CUDA requested but unavailable,ablation,mechanism_ablation,ablation_suite,mixed,0,cuda,19568db,BMW-Pro.local,3.12.12,2.10.0,unavailable,False,0,0,,,,reports/runs/stabilization_ablation_cuda_requested/20260424_074902_ablation_cuda_unavailable,{}

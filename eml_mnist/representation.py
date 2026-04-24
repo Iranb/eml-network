@@ -134,6 +134,11 @@ class EMLResponsibilityPropagation(nn.Module):
         window_size: int = 3,
         clip_value: float = 3.0,
         responsibility_temperature: float = 1.0,
+        responsibility_mode: str = "standard",
+        evidence_threshold: float = 0.0,
+        learnable_threshold: bool = False,
+        precision_old_confidence_init: float = 5.0,
+        update_threshold: float = 0.0,
     ) -> None:
         super().__init__()
         if mode not in {"image", "text"}:
@@ -159,11 +164,18 @@ class EMLResponsibilityPropagation(nn.Module):
             temperature=responsibility_temperature,
             use_null=True,
             null_logit=0.0,
+            mode=responsibility_mode,
+            evidence_threshold=evidence_threshold,
+            learnable_threshold=learnable_threshold,
         )
         self.value_proj = nn.Linear(state_dim, state_dim)
         self.candidate = _MLP(state_dim * 3, hidden_dim, state_dim, final_tanh=True)
         self.old_confidence = _MLP(state_dim, hidden_dim, 1)
-        self.precision_update = EMLPrecisionUpdate(mode="precision")
+        self.precision_update = EMLPrecisionUpdate(
+            mode="precision",
+            old_confidence_init=precision_old_confidence_init,
+            update_threshold=update_threshold,
+        )
         self.out_norm = nn.LayerNorm(state_dim)
         _reset_linear(self.value_proj)
 

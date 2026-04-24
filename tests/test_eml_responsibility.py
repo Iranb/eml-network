@@ -54,3 +54,20 @@ def test_null_weight_increases_when_all_energies_are_low() -> None:
 
     assert low.item() > high.item()
     assert low.item() > 0.9
+
+
+def test_thresholded_null_rejects_low_evidence() -> None:
+    responsibility = EMLResponsibility(mode="thresholded_null", use_null=True, evidence_threshold=0.0)
+    out = responsibility(torch.full((2, 5), -4.0))
+
+    assert out["null_weight"].min().item() > 0.7
+    assert out["neighbor_weights"].sum(dim=-1).max().item() < 0.3
+
+
+def test_thresholded_null_selects_high_evidence() -> None:
+    responsibility = EMLResponsibility(mode="thresholded_null", use_null=True, evidence_threshold=0.0)
+    energy = torch.tensor([[-2.0, -1.0, 5.0, -3.0]])
+    out = responsibility(energy)
+
+    assert out["neighbor_weights"][0, 2].item() > 0.7
+    assert out["null_weight"].item() < 0.3

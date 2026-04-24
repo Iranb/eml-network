@@ -249,6 +249,9 @@ class EMLMessagePassing(nn.Module):
         responsibility_mode: bool = True,
         responsibility_temperature: float = 1.0,
         responsibility_use_null: bool = True,
+        responsibility_distribution_mode: str = "standard",
+        evidence_threshold: float = 0.0,
+        learnable_threshold: bool = False,
     ) -> None:
         super().__init__()
         if slot_dim <= 0 or event_dim <= 0 or hidden_dim <= 0:
@@ -273,6 +276,9 @@ class EMLMessagePassing(nn.Module):
             temperature=responsibility_temperature,
             use_null=responsibility_use_null,
             null_logit=0.0,
+            mode=responsibility_distribution_mode,
+            evidence_threshold=evidence_threshold,
+            learnable_threshold=learnable_threshold,
         )
         _reset_linear(self.event_proj)
         _reset_linear(self.source_proj)
@@ -390,6 +396,8 @@ class EMLStateUpdateCell(nn.Module):
         clip_value: float = 3.0,
         gate_bias: float = -1.0,
         update_mode: str = "sigmoid",
+        precision_old_confidence_init: float = 5.0,
+        update_threshold: float = 0.0,
     ) -> None:
         super().__init__()
         if slot_dim <= 0 or event_dim <= 0 or hidden_dim <= 0:
@@ -409,7 +417,11 @@ class EMLStateUpdateCell(nn.Module):
         self.resistance_net = _MLP(input_dim, hidden_dim, slot_dim)
         self.update_gate = EMLUpdateGate(dim=slot_dim, clip_value=clip_value, init_bias=gate_bias)
         self.old_confidence_net = _MLP(slot_dim, hidden_dim, slot_dim)
-        self.precision_update = EMLPrecisionUpdate(mode="precision")
+        self.precision_update = EMLPrecisionUpdate(
+            mode="precision",
+            old_confidence_init=precision_old_confidence_init,
+            update_threshold=update_threshold,
+        )
         self.out_norm = nn.LayerNorm(slot_dim)
 
     def forward(
@@ -481,6 +493,7 @@ class EMLStateUpdateCell(nn.Module):
                     "old_precision": precision_out["old_precision"],
                     "new_precision_fp32": precision_out["new_precision_fp32"],
                     "old_precision_fp32": precision_out["old_precision_fp32"],
+                    "update_gate_init_mean": precision_out["update_gate_init_mean"],
                     "updated_state": precision_out["updated_state"],
                 }
             )

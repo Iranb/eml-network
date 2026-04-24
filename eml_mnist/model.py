@@ -482,10 +482,16 @@ class EMLPrototypeClassifier(nn.Module):
         hidden_dim: int,
         clip_value: float = 3.0,
         prototype_temperature: float = 0.25,
+        center_ambiguity: bool = True,
+        ambiguity_weight: float = 1.0,
+        schedule_ambiguity_weight: bool = True,
     ) -> None:
         super().__init__()
         self.num_classes = num_classes
         self.prototype_temperature = prototype_temperature
+        self.center_ambiguity = bool(center_ambiguity)
+        self.ambiguity_weight = float(ambiguity_weight)
+        self.schedule_ambiguity_weight = bool(schedule_ambiguity_weight)
 
         self.prototypes = nn.Parameter(torch.empty(num_classes, feature_dim))
         nn.init.normal_(self.prototypes, mean=0.0, std=0.05)
@@ -504,12 +510,20 @@ class EMLPrototypeClassifier(nn.Module):
             init_bias=0.0,
         )
 
-    def compute_ambiguity(self, similarity: torch.Tensor) -> torch.Tensor:
+    def compute_ambiguity(self, similarity: torch.Tensor, center: bool | None = None) -> torch.Tensor:
         batch_size, num_classes = similarity.shape
+        if num_classes <= 1:
+            return torch.zeros_like(similarity)
         eye_mask = torch.eye(num_classes, device=similarity.device, dtype=torch.bool).unsqueeze(0)
         expanded = similarity.unsqueeze(1).expand(batch_size, num_classes, num_classes)
         masked = expanded.masked_fill(eye_mask, float("-inf"))
-        return torch.logsumexp(masked, dim=-1)
+        ambiguity = torch.logsumexp(masked, dim=-1)
+        effective_center = self.center_ambiguity if center is None else bool(center)
+        if effective_center:
+            ambiguity = ambiguity - torch.log(
+                torch.tensor(float(num_classes - 1), device=similarity.device, dtype=similarity.dtype)
+            )
+        return ambiguity
 
     def forward(
         self,
@@ -523,9 +537,17 @@ class EMLPrototypeClassifier(nn.Module):
         drive = similarity / self.prototype_temperature + self.drive_residual(features)
 
         ambiguity = self.compute_ambiguity(similarity / self.prototype_temperature)
+        if torch.is_tensor(warmup_eta):
+            eta = warmup_eta.to(device=features.device, dtype=features.dtype).clamp(0.0, 1.0)
+        else:
+            eta = torch.tensor(float(warmup_eta), device=features.device, dtype=features.dtype).clamp(0.0, 1.0)
+        ambiguity_weight = torch.tensor(self.ambiguity_weight, device=features.device, dtype=features.dtype)
+        if self.schedule_ambiguity_weight:
+            ambiguity_weight = ambiguity_weight * eta
+        weighted_ambiguity = ambiguity_weight * ambiguity
         class_radius = F.softplus(self.raw_class_resistance).unsqueeze(0).expand_as(drive)
         sample_uncertainty = F.softplus(self.uncertainty_head(features)).expand_as(drive)
-        resistance = ambiguity + class_radius + sample_uncertainty
+        resistance = weighted_ambiguity + class_radius + sample_uncertainty
 
         score_diagnostics = self.eml_score.compute(drive, resistance, warmup_eta=warmup_eta)
         logits = score_diagnostics["energy"]
@@ -538,7 +560,11 @@ class EMLPrototypeClassifier(nn.Module):
             "drive": drive,
             "resistance": resistance,
             "similarity": similarity,
+            "ambiguity": ambiguity,
+            "weighted_ambiguity": weighted_ambiguity,
+            "ambiguity_weight": ambiguity_weight.expand_as(ambiguity),
             "class_radius": class_radius,
+            "class_resistance": class_radius,
             "sample_uncertainty": sample_uncertainty[:, :1],
             "prototypes": self.prototypes,
             "eml_gamma": score_diagnostics["gamma_fp32"],

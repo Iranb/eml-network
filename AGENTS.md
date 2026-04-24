@@ -25,6 +25,12 @@ EMLSensor
 
 Image field and text field encoders are primary validation paths. PureEML image backbones, EMLTextBackbone, CNN, and MNIST models are compatibility baselines.
 
+Current evidence must be stated cautiously:
+- `cnn_eml` is the strongest stable image baseline observed so far.
+- EML as a head is not proven better until frozen-feature and end-to-end head ablations show it under matched conditions.
+- Efficient EML representation trunks are not proven replacements for CNN/local text baselines until the ablation reports show it.
+- Prefer falsifiable ablation claims over adding more modules.
+
 The efficient representation path is also primary for this phase:
 
 ```text
@@ -133,10 +139,18 @@ Always produce durable report artifacts for experiments:
 - write raw run data under `reports/runs/`
 - maintain `reports/runs/summary.csv`
 - regenerate `reports/EML_VALIDATION_REPORT.md` after validation runs
+- generate focused reports when running focused ablations:
+  - `reports/HEAD_ABLATION_REPORT.md`
+  - `reports/CNN_HEAD_END_TO_END_REPORT.md`
+  - `reports/MECHANISM_PROBE_REPORT.md`
+  - `reports/IMAGE_REPRESENTATION_ABLATION_REPORT.md`
+  - `reports/TEXT_REPRESENTATION_ABLATION_REPORT.md`
+  - `reports/EML_MASTER_NEXT_STEP_REPORT.md`
 - never fabricate experiment results
 - mark unrun experiments as `NOT RUN` and record the reason
 - record failed runs with failure reasons when practical
 - focus on ablation and measured diagnostics before adding new architecture
+- use staged hardening only as a measured ablation, not as an assumed improvement
 
 Always run after meaningful changes:
 - `pytest`
@@ -155,3 +169,11 @@ Always run after meaningful changes:
 Optional only if local data and dependencies exist:
 - `python train_mnist.py --epochs 1`
 - `python scripts/train_image_classification.py --dataset mnist --steps 50`
+
+Focused stabilization smoke commands:
+- `python scripts/run_head_ablation.py --dataset synthetic_shape --mode smoke --seeds 0 1 --num-workers 0`
+- `python scripts/run_cnn_head_end_to_end_ablation.py --dataset synthetic_shape --mode smoke --seeds 0 1 --num-workers 0`
+- `python scripts/run_mechanism_probes.py --mode smoke --seeds 0 1`
+- `python scripts/run_image_representation_ablation.py --mode smoke --seeds 0 1 --num-workers 0`
+- `python scripts/run_text_representation_ablation.py --mode smoke --seeds 0 1 --num-workers 0`
+- `python scripts/generate_master_eml_report.py`

@@ -59,3 +59,16 @@ def test_eml_precision_update_changes_state_when_new_energy_is_high() -> None:
 
     assert out["update_gate"].min().item() > 0.99
     assert torch.allclose(out["updated_state"], candidate, atol=1.0e-3)
+
+
+def test_precision_update_identity_init_gate_is_small() -> None:
+    update = EMLPrecisionUpdate(old_confidence_init=5.0)
+    state = torch.zeros(2, 3, 4)
+    candidate = torch.ones_like(state)
+    new_energy = torch.zeros(2, 3, 1)
+
+    out = update(state, candidate, new_energy)
+
+    gate_mean = out["update_gate"].mean().item()
+    assert 0.05 <= gate_mean <= 0.15
+    assert torch.allclose(out["updated_state"], state, atol=0.35)

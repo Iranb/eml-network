@@ -22,9 +22,18 @@ from .heads import (
     RepresentationHead,
     RiskResistanceHead,
 )
+from .head_ablation import (
+    CosinePrototypeHead,
+    EMLPrototypeHeadCenteredAmbiguity,
+    EMLPrototypeHeadNoAmbiguity,
+    EMLPrototypeHeadRawAmbiguity,
+    LinearHead,
+    MLPHead,
+)
 from .image_backbones import PureEMLImageBackbone, PureEMLImageClassifier
 from .image_codecs import LocalImageChunkCodec
 from .image_datasets import SyntheticShapeDataset, SyntheticShapeEnergyDataset
+from .mechanism_probes import MECHANISM_NAMES, PROBE_NAMES, run_mechanism_probe
 from .model import CNNEMLStageNet, MNISTEMLNet, PureEMLMNISTNet, PureEMLV2MNISTNet, build_mnist_eml_model
 from .primitives import (
     EMLActivationBudget,
@@ -37,6 +46,7 @@ from .primitives import (
     EMLUnit,
     EMLUpdateGate,
 )
+from .schedules import StagedHardeningConfig, get_staged_hardening_values
 from .text_backbones import EMLCausalLocalMessageBlock, EMLTextBackbone
 from .text_codecs import CharVocabulary, LocalTextCodec
 from .text_datasets import SyntheticGrammarDataset, SyntheticTextEnergyDataset
@@ -54,6 +64,7 @@ __all__ = [
     "CharVocabulary",
     "ClassificationHead",
     "CNNEMLStageNet",
+    "CosinePrototypeHead",
     "EfficientEMLImageClassifier",
     "EfficientEMLImageEncoder",
     "EfficientEMLTextEncoder",
@@ -75,6 +86,9 @@ __all__ = [
     "EMLHypothesisField",
     "EMLMessageGate",
     "EMLPrecisionUpdate",
+    "EMLPrototypeHeadCenteredAmbiguity",
+    "EMLPrototypeHeadNoAmbiguity",
+    "EMLPrototypeHeadRawAmbiguity",
     "EMLResponsibility",
     "EMLMessagePassing",
     "EMLSensor",
@@ -87,19 +101,24 @@ __all__ = [
     "EMLUpdateGate",
     "LocalImageChunkCodec",
     "LocalReconstructionHead",
+    "LinearHead",
     "EMLTextBackbone",
     "LocalTextCodec",
     "LocalTextGenerationHead",
+    "MECHANISM_NAMES",
     "MNISTEMLNet",
+    "MLPHead",
     "PatchRankHead",
     "PrototypeNoveltyHead",
     "PureEMLImageBackbone",
     "PureEMLImageClassifier",
     "PureEMLMNISTNet",
     "PureEMLV2MNISTNet",
+    "PROBE_NAMES",
     "RepresentationHead",
     "RiskResistanceHead",
     "SlotBank",
+    "StagedHardeningConfig",
     "SyntheticGrammarDataset",
     "SyntheticTextEnergyDataset",
     "SyntheticShapeDataset",
@@ -110,4 +129,6 @@ __all__ = [
     "ToyPrototypeDataset",
     "ToyStateTransitionDataset",
     "build_mnist_eml_model",
+    "get_staged_hardening_values",
+    "run_mechanism_probe",
 ]

@@ -5,6 +5,7 @@ import itertools
 import math
 import sys
 import time
+import traceback
 from pathlib import Path
 from typing import Any, Dict, Iterable
 
@@ -22,14 +23,28 @@ from eml_mnist.diagnostics import collect_eml_diagnostics
 from eml_mnist.experiment_utils import ExperimentLogger, count_parameters, grad_norm, safe_torchvision_available
 from eml_mnist.graph import EMLMessagePassing, EMLStateUpdateCell
 from eml_mnist.image_datasets import SyntheticShapeEnergyDataset
-from eml_mnist.metrics import classification_accuracy, perplexity, token_accuracy, topk_accuracy
+from eml_mnist.metrics import classification_accuracy, pearson_corr, perplexity, token_accuracy, topk_accuracy
+from eml_mnist.primitives import EMLPrecisionUpdate, EMLResponsibility, EMLUnit
+from eml_mnist.representation import EMLAttractorMemory, EMLComposition
+from eml_mnist.schedules import get_staged_hardening_values
 from eml_mnist.text_codecs import CharVocabulary
 from eml_mnist.text_datasets import SyntheticTextEnergyDataset
 from eml_mnist.training import build_classification_loaders, resolve_device, set_seed
 
 
 class EfficientTextLM(nn.Module):
-    def __init__(self, vocab_size: int, pad_id: int, state_dim: int = 32, hidden_dim: int = 64, window_size: int = 8) -> None:
+    def __init__(
+        self,
+        vocab_size: int,
+        pad_id: int,
+        state_dim: int = 32,
+        hidden_dim: int = 64,
+        window_size: int = 8,
+        responsibility_mode: str = "standard",
+        precision_old_confidence_init: float = 5.0,
+        enable_composition: bool = True,
+        enable_attractor: bool = True,
+    ) -> None:
         super().__init__()
         self.encoder = EfficientEMLTextEncoder(
             vocab_size=vocab_size,
@@ -42,6 +57,10 @@ class EfficientTextLM(nn.Module):
             causal_window_size=window_size,
             chunk_size=8,
             pad_id=pad_id,
+            responsibility_mode=responsibility_mode,
+            precision_old_confidence_init=precision_old_confidence_init,
+            enable_composition=enable_composition,
+            enable_attractor=enable_attractor,
         )
         self.head = EfficientEMLTextGenerationHead(
             state_dim=state_dim,
@@ -79,6 +98,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--patience", type=int, default=20)
     parser.add_argument("--min-delta", type=float, default=1.0e-4)
     parser.add_argument("--eval-batches", type=int, default=20)
+    parser.add_argument("--staged-hardening", action="store_true")
+    parser.add_argument("--warmup-steps", type=int, default=100)
+    parser.add_argument("--responsibility-temp-start", type=float, default=2.0)
+    parser.add_argument("--responsibility-temp-end", type=float, default=0.8)
+    parser.add_argument("--ambiguity-warmup-steps", type=int, default=100)
+    parser.add_argument("--null-threshold-start", type=float, default=1.0)
+    parser.add_argument("--null-threshold-end", type=float, default=0.0)
     return parser
 
 
@@ -105,12 +131,23 @@ def _record_failed(
             "dataset_name": dataset_name,
             "seed": args.seed,
             "device": args.device,
+            "num_workers": args.num_workers,
+            "steps": args.steps,
+            "batch_size": args.batch_size,
+            "image_size": args.image_size,
+            "seq_len": args.seq_len,
+            "lr": args.lr,
+            "early_stop": args.early_stop,
+            "patience": args.patience,
+            "min_delta": args.min_delta,
         },
         root=args.runs_root,
     )
+    trace = traceback.format_exc()
     logger.set_model_info(extra={"num_params": 0, "trainable_params": 0})
     logger.log_text(f"FAILED: {repr(exc)}")
-    logger.finalize(summary={}, status="FAILED", reason=repr(exc))
+    logger.log_text(trace)
+    logger.finalize(summary={"error_trace": trace}, status="FAILED", reason=repr(exc))
 
 
 def _safe_run(
@@ -131,6 +168,46 @@ def _warmup(step: int, steps: int, enabled: bool = True) -> float:
     if not enabled:
         return 1.0
     return min(1.0, float(step + 1) / max(1, steps))
+
+
+def _schedule_values(args: argparse.Namespace, step: int, steps: int, warmup_enabled: bool = True) -> Dict[str, float]:
+    if not getattr(args, "staged_hardening", False):
+        return {
+            "warmup_eta": _warmup(step, steps, warmup_enabled),
+            "responsibility_temperature": float("nan"),
+            "ambiguity_weight": float("nan"),
+            "null_threshold": float("nan"),
+            "attractor_entropy_weight": float("nan"),
+            "precision_update_threshold": float("nan"),
+        }
+    return get_staged_hardening_values(
+        step + 1,
+        steps,
+        {
+            "warmup_steps": args.warmup_steps,
+            "responsibility_temp_start": args.responsibility_temp_start,
+            "responsibility_temp_end": args.responsibility_temp_end,
+            "ambiguity_warmup_steps": args.ambiguity_warmup_steps,
+            "null_threshold_start": args.null_threshold_start,
+            "null_threshold_end": args.null_threshold_end,
+        },
+    )
+
+
+def _apply_schedule(model: nn.Module, values: Dict[str, float]) -> None:
+    if not values or not math.isfinite(values.get("responsibility_temperature", float("nan"))):
+        return
+    with torch.no_grad():
+        for module in model.modules():
+            if isinstance(module, EMLResponsibility):
+                module.temperature.fill_(float(values["responsibility_temperature"]))
+                if hasattr(module, "evidence_threshold"):
+                    module.evidence_threshold.fill_(float(values["null_threshold"]))
+            if hasattr(module, "ambiguity_weight"):
+                try:
+                    module.ambiguity_weight = float(values["ambiguity_weight"])
+                except Exception:
+                    pass
 
 
 def _finalize_training(
@@ -189,6 +266,7 @@ def _train_image_model(
         "early_stop": args.early_stop,
         "patience": args.patience,
         "min_delta": args.min_delta,
+        "num_workers": args.num_workers,
     }
     logger = ExperimentLogger(run_id=run_id, config=config, root=args.runs_root)
     logger.set_model_info(model)
@@ -209,7 +287,9 @@ def _train_image_model(
         images = batch["image"].to(device)
         labels = batch["label"].to(device)
         step_start = time.time()
-        warmup_eta = _warmup(step, args.steps, warmup_enabled)
+        schedule = _schedule_values(args, step, args.steps, warmup_enabled)
+        _apply_schedule(model, schedule)
+        warmup_eta = schedule["warmup_eta"]
         outputs = model(images, warmup_eta=warmup_eta)
         loss = F.cross_entropy(outputs["logits"], labels)
         optimizer.zero_grad(set_to_none=True)
@@ -221,6 +301,16 @@ def _train_image_model(
         top5 = topk_accuracy(outputs["logits"].detach(), labels, k=5)
         best_acc = max(best_acc, accuracy)
         diagnostics = collect_eml_diagnostics(outputs)
+        resistance_noise_corr = float("nan")
+        resistance_occlusion_corr = float("nan")
+        if torch.is_tensor(outputs.get("resistance")):
+            sample_resistance = outputs["resistance"].detach().float()
+            while sample_resistance.ndim > 1:
+                sample_resistance = sample_resistance.mean(dim=-1)
+            if torch.is_tensor(batch.get("noise_level")):
+                resistance_noise_corr = pearson_corr(sample_resistance, batch["noise_level"].to(device))
+            if torch.is_tensor(batch.get("occlusion_level")):
+                resistance_occlusion_corr = pearson_corr(sample_resistance, batch["occlusion_level"].to(device))
         metrics = {
             "step": step + 1,
             "train_loss": float(loss.detach().cpu().item()),
@@ -233,6 +323,9 @@ def _train_image_model(
             "wall_clock_time_sec": time.time() - start,
             "examples_per_sec": float(images.size(0) / max(step_time, 1.0e-9)),
             "peak_memory_mb": _peak_memory_mb(device),
+            "resistance_noise_corr": resistance_noise_corr,
+            "resistance_occlusion_corr": resistance_occlusion_corr,
+            **schedule,
         }
         logger.log_step(metrics, diagnostics)
         final_metrics = {
@@ -280,6 +373,7 @@ def _train_text_model(
         "early_stop": args.early_stop,
         "patience": args.patience,
         "min_delta": args.min_delta,
+        "num_workers": args.num_workers,
     }
     logger = ExperimentLogger(run_id=run_id, config=config, root=args.runs_root)
     logger.set_model_info(model)
@@ -301,7 +395,9 @@ def _train_text_model(
         targets = batch["target_ids"].to(device)
         mask = batch["padding_mask"].to(device).bool()
         step_start = time.time()
-        outputs = model(input_ids, mask, warmup_eta=_warmup(step, args.steps, True))
+        schedule = _schedule_values(args, step, args.steps, True)
+        _apply_schedule(model, schedule)
+        outputs = model(input_ids, mask, warmup_eta=schedule["warmup_eta"])
         logits = outputs["logits"]
         loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1), ignore_index=vocab.pad_id)
         optimizer.zero_grad(set_to_none=True)
@@ -314,6 +410,12 @@ def _train_text_model(
         diagnostics = collect_eml_diagnostics(outputs)
         loss_value = float(loss.detach().cpu().item())
         valid_tokens = int(mask.sum().detach().cpu().item())
+        corruption_resistance_corr = float("nan")
+        if torch.is_tensor(outputs.get("resistance")) and torch.is_tensor(batch.get("corruption_mask")):
+            token_resistance = outputs["resistance"].detach().float()
+            while token_resistance.ndim > 2:
+                token_resistance = token_resistance.mean(dim=-1)
+            corruption_resistance_corr = pearson_corr(token_resistance[mask], batch["corruption_mask"].to(device).float()[mask])
         metrics = {
             "step": step + 1,
             "next_token_loss": loss_value,
@@ -328,6 +430,8 @@ def _train_text_model(
             "wall_clock_time_sec": time.time() - start,
             "tokens_per_sec": float(valid_tokens / max(step_time, 1.0e-9)),
             "peak_memory_mb": _peak_memory_mb(device),
+            "corruption_resistance_corr": corruption_resistance_corr,
+            **schedule,
         }
         logger.log_step(metrics, diagnostics)
         final_metrics = {
@@ -361,6 +465,7 @@ def _run_mechanism_probe(
     responsibility_mode: bool,
     use_null: bool,
     update_mode: str,
+    responsibility_distribution_mode: str = "standard",
 ) -> None:
     config = {
         "mode": args.mode,
@@ -372,6 +477,7 @@ def _run_mechanism_probe(
         "responsibility_mode": responsibility_mode,
         "use_null": use_null,
         "update_mode": update_mode,
+        "responsibility_distribution_mode": responsibility_distribution_mode,
     }
     logger = ExperimentLogger(run_id=run_id, config=config, root=args.runs_root)
     set_seed(seed)
@@ -381,6 +487,7 @@ def _run_mechanism_probe(
         hidden_dim=32,
         responsibility_mode=responsibility_mode,
         responsibility_use_null=use_null,
+        responsibility_distribution_mode=responsibility_distribution_mode,
     ).to(device)
     update = EMLStateUpdateCell(slot_dim=16, event_dim=8, hidden_dim=32, update_mode=update_mode).to(device)
     wrapper = nn.ModuleDict({"message_layer": message, "state_update_cell": update})
@@ -416,6 +523,128 @@ def _run_mechanism_probe(
     )
 
 
+def _run_named_mechanism_probe(
+    run_id: str,
+    probe_name: str,
+    args: argparse.Namespace,
+    device: torch.device,
+    seed: int,
+) -> None:
+    config = {
+        "mode": args.mode,
+        "task_name": "mechanism_probe",
+        "model_name": probe_name,
+        "dataset_name": "synthetic_probe_tensors",
+        "seed": seed,
+        "device": str(device),
+        "probe_name": probe_name,
+    }
+    logger = ExperimentLogger(run_id=run_id, config=config, root=args.runs_root)
+    set_seed(seed)
+    start = time.time()
+    modules: nn.Module | None = None
+    outputs: Dict[str, Any] = {}
+    metrics: Dict[str, Any] = {"step": 1, "train_loss": 0.0}
+    success = False
+
+    if probe_name == "strong_signal_vs_many_weak_noise":
+        responsibility = EMLResponsibility(mode="thresholded_null", use_null=True, temperature=1.0).to(device)
+        energy = torch.tensor([[-2.0, -1.5, 5.0, -3.0, -2.5]], device=device)
+        out = responsibility(energy)
+        success = bool(out["neighbor_weights"][0, 2].detach().cpu().item() > 0.7)  # type: ignore[index]
+        outputs = {"responsibility": out}
+        metrics["selected_neighbor_weight"] = float(out["neighbor_weights"][0, 2].detach().cpu().item())  # type: ignore[index]
+        modules = responsibility
+    elif probe_name == "all_noise_should_choose_null":
+        responsibility = EMLResponsibility(mode="thresholded_null", use_null=True, temperature=1.0).to(device)
+        energy = torch.full((2, 6), -4.0, device=device)
+        out = responsibility(energy)
+        success = bool(out["null_weight"].min().detach().cpu().item() > 0.7)  # type: ignore[union-attr]
+        outputs = {"responsibility": out}
+        metrics["null_weight_min"] = float(out["null_weight"].min().detach().cpu().item())  # type: ignore[union-attr]
+        modules = responsibility
+    elif probe_name == "conflicting_neighbors_increase_resistance":
+        unit = EMLUnit(dim=1).to(device)
+        drive = torch.ones(4, 1, device=device)
+        low_resistance = torch.zeros(4, 1, device=device)
+        high_resistance = torch.full((4, 1), 5.0, device=device)
+        low_energy = unit(drive, low_resistance)
+        high_energy = unit(drive, high_resistance)
+        success = bool(high_energy.mean().detach().cpu().item() < low_energy.mean().detach().cpu().item())
+        outputs = {"drive": drive, "resistance": high_resistance, "energy": high_energy}
+        metrics["low_resistance_energy"] = float(low_energy.mean().detach().cpu().item())
+        metrics["high_resistance_energy"] = float(high_energy.mean().detach().cpu().item())
+        modules = unit
+    elif probe_name == "old_state_confident_new_evidence_weak_should_not_update":
+        update = EMLPrecisionUpdate(old_confidence_init=0.0).to(device)
+        state = torch.zeros(2, 3, 8, device=device)
+        candidate = torch.ones_like(state)
+        out = update(state, candidate, torch.full((2, 3, 1), -8.0, device=device), torch.full((2, 3, 1), 8.0, device=device))
+        delta = (out["updated_state"] - state).norm(dim=-1).mean()
+        success = bool(delta.detach().cpu().item() < 0.05)
+        outputs = out
+        metrics["update_delta"] = float(delta.detach().cpu().item())
+        modules = update
+    elif probe_name == "old_state_weak_new_evidence_strong_should_update":
+        update = EMLPrecisionUpdate(old_confidence_init=0.0).to(device)
+        state = torch.zeros(2, 3, 8, device=device)
+        candidate = torch.ones_like(state)
+        out = update(state, candidate, torch.full((2, 3, 1), 8.0, device=device), torch.full((2, 3, 1), -8.0, device=device))
+        gate = out["update_gate"].mean()
+        success = bool(gate.detach().cpu().item() > 0.7)
+        outputs = out
+        metrics["update_gate_mean"] = float(gate.detach().cpu().item())
+        modules = update
+    elif probe_name == "composition_requires_consistent_children":
+        composition = EMLComposition(state_dim=8, hidden_dim=16, mode="text", region_size=4).to(device)
+        base = torch.randn(2, 1, 8, device=device)
+        consistent = base.expand(-1, 8, -1) + 0.01 * torch.randn(2, 8, 8, device=device)
+        inconsistent = torch.randn(2, 8, 8, device=device) * 2.0
+        mask = torch.ones(2, 8, device=device, dtype=torch.bool)
+        out_consistent = composition(consistent, padding_mask=mask)
+        out_inconsistent = composition(inconsistent, padding_mask=mask)
+        consistent_var = consistent.view(2, 2, 4, 8).var(dim=2, unbiased=False).mean()
+        inconsistent_var = inconsistent.view(2, 2, 4, 8).var(dim=2, unbiased=False).mean()
+        success = bool(inconsistent_var.detach().cpu().item() > consistent_var.detach().cpu().item())
+        outputs = {"consistent": out_consistent, "inconsistent": out_inconsistent}
+        metrics["consistent_child_variance"] = float(consistent_var.detach().cpu().item())
+        metrics["inconsistent_child_variance"] = float(inconsistent_var.detach().cpu().item())
+        modules = composition
+    elif probe_name == "attractor_should_not_collapse":
+        attractor = EMLAttractorMemory(state_dim=8, hidden_dim=16, num_attractors=4).to(device)
+        states = torch.randn(3, 10, 8, device=device)
+        out = attractor(states)
+        normalized = F.normalize(out["attractor_states"].detach().float(), dim=-1)  # type: ignore[index]
+        cosine = normalized @ normalized.transpose(1, 2)
+        mask = ~torch.eye(4, device=device, dtype=torch.bool).unsqueeze(0)
+        diversity_penalty = cosine.masked_select(mask).square().mean()
+        success = bool(torch.isfinite(diversity_penalty).item() and diversity_penalty.detach().cpu().item() < 0.95)
+        outputs = out
+        metrics["attractor_diversity_penalty"] = float(diversity_penalty.detach().cpu().item())
+        modules = attractor
+    else:
+        raise ValueError(f"unknown mechanism probe: {probe_name}")
+
+    diagnostics = collect_eml_diagnostics(outputs)
+    elapsed = time.time() - start
+    metrics.update(
+        {
+            "final_metric": 1.0 if success else 0.0,
+            "best_metric": 1.0 if success else 0.0,
+            "wall_clock_time_sec": elapsed,
+            "step_time_sec": elapsed,
+            "peak_memory_mb": _peak_memory_mb(device),
+            "nan_inf_count": 0.0 if all(torch.isfinite(torch.tensor(v)).item() for v in metrics.values() if isinstance(v, (int, float))) else 1.0,
+        }
+    )
+    logger.set_model_info(modules)
+    logger.log_step(metrics, diagnostics)
+    logger.finalize(
+        summary={**metrics, "final_diagnostics": diagnostics, "total_train_time_sec": elapsed},
+        model_info=count_parameters(modules) if modules is not None else {"num_params": 0, "trainable_params": 0},
+    )
+
+
 def _train_cifar_model(
     run_id: str,
     model_name: str,
@@ -437,6 +666,7 @@ def _train_cifar_model(
         "patience": args.patience,
         "min_delta": args.min_delta,
         "eval_batches": args.eval_batches,
+        "num_workers": args.num_workers,
     }
     logger = ExperimentLogger(run_id=run_id, config=config, root=args.runs_root)
     logger.set_model_info(model)
@@ -463,7 +693,9 @@ def _train_cifar_model(
         images = images.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True)
         step_start = time.time()
-        outputs = model(images, warmup_eta=_warmup(step, args.steps, True))
+        schedule = _schedule_values(args, step, args.steps, True)
+        _apply_schedule(model, schedule)
+        outputs = model(images, warmup_eta=schedule["warmup_eta"])
         loss = F.cross_entropy(outputs["logits"], labels)
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
@@ -486,6 +718,7 @@ def _train_cifar_model(
             "early_stop_triggered": False,
             "early_stop_step": "",
             "completed_steps": step + 1,
+            **schedule,
         }
 
         should_eval = (step + 1 == args.steps) or ((step + 1) % max(1, args.eval_batches) == 0)
@@ -565,7 +798,18 @@ def _build_cnn_model(image_size: int) -> nn.Module:
     return _build_old_image_model("cnn_eml", image_size)
 
 
-def _build_efficient_image(num_attractors: int = 4, local_window_size: int = 3) -> nn.Module:
+def _build_efficient_image(
+    num_attractors: int = 4,
+    local_window_size: int = 3,
+    enable_composition: bool = True,
+    enable_attractor: bool = True,
+    center_ambiguity: bool = True,
+    ambiguity_weight: float = 1.0,
+    schedule_ambiguity_weight: bool = True,
+    responsibility_mode: str = "standard",
+    precision_old_confidence_init: float = 5.0,
+    sensor_bypass: bool = True,
+) -> nn.Module:
     return EfficientEMLImageClassifier(
         num_classes=5,
         input_channels=3,
@@ -577,6 +821,14 @@ def _build_efficient_image(num_attractors: int = 4, local_window_size: int = 3) 
         patch_stride=4,
         local_window_size=local_window_size,
         composition_region_size=2,
+        enable_composition=enable_composition,
+        enable_attractor=enable_attractor,
+        center_ambiguity=center_ambiguity,
+        ambiguity_weight=ambiguity_weight,
+        schedule_ambiguity_weight=schedule_ambiguity_weight,
+        responsibility_mode=responsibility_mode,
+        precision_old_confidence_init=precision_old_confidence_init,
+        sensor_bypass=sensor_bypass,
     )
 
 
@@ -654,6 +906,14 @@ def run_smoke(args: argparse.Namespace, device: torch.device) -> None:
         "synthetic_probe_tensors",
         lambda: _run_mechanism_probe("probe_responsibility_with_null_precision", args, device, args.seed + 5, True, True, "precision"),
     )
+    _safe_run(
+        "probe_thresholded_null",
+        args,
+        "mechanism_probe",
+        "thresholded_null",
+        "synthetic_probe_tensors",
+        lambda: _run_named_mechanism_probe("probe_thresholded_null", "all_noise_should_choose_null", args, device, args.seed + 6),
+    )
     _mark_planned_not_run(args, "smoke mode")
 
 
@@ -698,6 +958,47 @@ def run_ablation(args: argparse.Namespace, device: torch.device) -> None:
             "synthetic_probe_tensors",
             lambda seed=seed, offset=offset: _run_mechanism_probe(f"ablation_resp_null_seed{offset}", args, device, seed + 20, True, True, "precision"),
         )
+    _safe_run(
+        "ablation_sigmoid_gate_mean",
+        args,
+        "mechanism_probe",
+        "sigmoid_gate_mean",
+        "synthetic_probe_tensors",
+        lambda: _run_mechanism_probe("ablation_sigmoid_gate_mean", args, device, args.seed + 24, False, False, "sigmoid"),
+    )
+    _safe_run(
+        "ablation_thresholded_null",
+        args,
+        "mechanism_probe",
+        "responsibility_thresholded_null",
+        "synthetic_probe_tensors",
+        lambda: _run_mechanism_probe("ablation_thresholded_null", args, device, args.seed + 25, True, True, "precision", "thresholded_null"),
+    )
+    probe_names = [
+        "strong_signal_vs_many_weak_noise",
+        "all_noise_should_choose_null",
+        "conflicting_neighbors_increase_resistance",
+        "old_state_confident_new_evidence_weak_should_not_update",
+        "old_state_weak_new_evidence_strong_should_update",
+        "composition_requires_consistent_children",
+        "attractor_should_not_collapse",
+    ]
+    for probe_index, probe_name in enumerate(probe_names):
+        run_id = f"probe_{probe_name}"
+        _safe_run(
+            run_id,
+            args,
+            "mechanism_probe",
+            probe_name,
+            "synthetic_probe_tensors",
+            lambda run_id=run_id, probe_name=probe_name, probe_index=probe_index: _run_named_mechanism_probe(
+                run_id,
+                probe_name,
+                args,
+                device,
+                args.seed + 60 + probe_index,
+            ),
+        )
 
     image_runs = [
         ("ablation_image_cnn_eml", "cnn_eml", lambda: _build_cnn_model(args.image_size), True, args.seed + 30),
@@ -707,6 +1008,15 @@ def run_ablation(args: argparse.Namespace, device: torch.device) -> None:
         ("ablation_image_eff_attr8", "EfficientEMLImageClassifier_attr8", lambda: _build_efficient_image(8, 3), True, args.seed + 34),
         ("ablation_image_eff_window5", "EfficientEMLImageClassifier_window5", lambda: _build_efficient_image(4, 5), True, args.seed + 35),
         ("ablation_image_eff_no_warmup", "EfficientEMLImageClassifier_no_warmup", lambda: _build_efficient_image(4, 3), False, args.seed + 36),
+        ("ablation_no_composition", "EfficientEMLImageClassifier_no_composition", lambda: _build_efficient_image(4, 3, enable_composition=False), True, args.seed + 37),
+        ("ablation_no_attractor", "EfficientEMLImageClassifier_no_attractor", lambda: _build_efficient_image(1, 3, enable_attractor=False), True, args.seed + 38),
+        (
+            "ablation_head_without_ambiguity",
+            "prototype_head_without_ambiguity",
+            lambda: _build_efficient_image(4, 3, center_ambiguity=False, ambiguity_weight=0.0, schedule_ambiguity_weight=False),
+            True,
+            args.seed + 39,
+        ),
     ]
     for run_id, model_name, factory, warmup_enabled, seed in image_runs:
         _safe_run(
@@ -727,44 +1037,54 @@ def run_ablation(args: argparse.Namespace, device: torch.device) -> None:
         )
 
     vocab = CharVocabulary()
-    for window_size, seed in [(8, args.seed + 40), (16, args.seed + 41), (32, args.seed + 42)]:
-        run_id = f"ablation_text_eff_window{window_size}"
+    text_runs = [
+        ("ablation_text_window8_baseline", "EfficientEMLTextEncoder_window8", lambda: EfficientTextLM(len(vocab), vocab.pad_id, window_size=8), args.seed + 40),
+        (
+            "ablation_text_window8_thresholded_null",
+            "EfficientEMLTextEncoder_window8_thresholded_null",
+            lambda: EfficientTextLM(len(vocab), vocab.pad_id, window_size=8, responsibility_mode="thresholded_null"),
+            args.seed + 41,
+        ),
+        (
+            "ablation_text_window8_precision_identity",
+            "EfficientEMLTextEncoder_window8_precision_identity",
+            lambda: EfficientTextLM(len(vocab), vocab.pad_id, window_size=8, precision_old_confidence_init=5.0),
+            args.seed + 42,
+        ),
+        (
+            "ablation_text_window8_no_chunk",
+            "EfficientEMLTextEncoder_window8_no_chunk",
+            lambda: EfficientTextLM(len(vocab), vocab.pad_id, window_size=8, enable_composition=False, enable_attractor=False),
+            args.seed + 43,
+        ),
+        (
+            "ablation_text_window8_chunk_no_attractor",
+            "EfficientEMLTextEncoder_window8_chunk_no_attractor",
+            lambda: EfficientTextLM(len(vocab), vocab.pad_id, window_size=8, enable_composition=True, enable_attractor=False),
+            args.seed + 44,
+        ),
+        (
+            "ablation_text_window8_chunk_attractor",
+            "EfficientEMLTextEncoder_window8_chunk_attractor",
+            lambda: EfficientTextLM(len(vocab), vocab.pad_id, window_size=8, enable_composition=True, enable_attractor=True),
+            args.seed + 45,
+        ),
+    ]
+    for run_id, model_name, factory, seed in text_runs:
         _safe_run(
             run_id,
             args,
             "text_synthetic",
-            f"EfficientEMLTextEncoder_window{window_size}",
+            model_name,
             "SyntheticTextEnergyDataset",
-            lambda run_id=run_id, window_size=window_size, seed=seed: _train_text_model(
+            lambda run_id=run_id, model_name=model_name, factory=factory, seed=seed: _train_text_model(
                 run_id,
-                f"EfficientEMLTextEncoder_window{window_size}",
-                EfficientTextLM(len(vocab), vocab.pad_id, window_size=window_size),
+                model_name,
+                factory(),
                 args,
                 device,
                 seed,
             ),
-        )
-
-    unsupported = [
-        ("ablation_no_composition", "image_synthetic", "EfficientEMLImageClassifier_no_composition", "SyntheticShapeEnergyDataset", "model switch is not standardized"),
-        ("ablation_no_attractor", "image_synthetic", "EfficientEMLImageClassifier_no_attractor", "SyntheticShapeEnergyDataset", "model switch is not standardized"),
-        ("ablation_head_without_ambiguity", "image_synthetic", "prototype_head_without_ambiguity", "SyntheticShapeEnergyDataset", "head switch is not standardized"),
-        ("ablation_sigmoid_gate_mean", "mechanism_probe", "sigmoid_gate_mean", "synthetic_probe_tensors", "graph mode is not implemented"),
-        ("ablation_thresholded_null", "mechanism_probe", "responsibility_thresholded_null", "synthetic_probe_tensors", "threshold mode is not implemented"),
-    ]
-    for run_id, task, model_name, dataset_name, reason in unsupported:
-        ExperimentLogger.not_run(
-            run_id=run_id,
-            config={
-                "mode": args.mode,
-                "task_name": task,
-                "model_name": model_name,
-                "dataset_name": dataset_name,
-                "seed": args.seed,
-                "device": str(device),
-            },
-            reason=reason,
-            root=args.runs_root,
         )
 
 
@@ -834,6 +1154,8 @@ def run_text_medium(args: argparse.Namespace, device: torch.device) -> None:
 
 def main() -> None:
     args = build_parser().parse_args()
+    if args.num_workers > 0:
+        torch.multiprocessing.set_sharing_strategy("file_system")
     device = resolve_device(args.device)
     Path(args.runs_root).mkdir(parents=True, exist_ok=True)
     if device.type == "cuda":

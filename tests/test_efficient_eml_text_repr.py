@@ -88,3 +88,27 @@ def test_efficient_eml_text_no_future_leakage() -> None:
         perturbed = model(changed, padding_mask=mask, warmup_eta=0.5)["sequence_states"]
 
     assert torch.allclose(original[:, : cutoff + 1], perturbed[:, : cutoff + 1], atol=1.0e-5, rtol=1.0e-5)
+
+
+def test_efficient_eml_text_thresholded_and_no_attractor_switches() -> None:
+    input_ids, _, mask, vocab_size = _batch(batch_size=2, seq_len=24)
+    model = EfficientEMLTextEncoder(
+        vocab_size=vocab_size,
+        embed_dim=16,
+        state_dim=20,
+        hidden_dim=40,
+        num_hypotheses=4,
+        num_attractors=1,
+        representation_dim=20,
+        causal_window_size=5,
+        chunk_size=4,
+        responsibility_mode="thresholded_null",
+        enable_composition=False,
+        enable_attractor=False,
+    )
+
+    out = model(input_ids, padding_mask=mask, warmup_eta=0.5)
+
+    assert out["representation"].shape == (2, 20)
+    assert out["diagnostics"]["num_attractors"].item() == 0
+    assert torch.isfinite(out["sequence_states"]).all()

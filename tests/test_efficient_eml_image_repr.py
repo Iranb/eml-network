@@ -57,3 +57,25 @@ def test_efficient_eml_image_classifier_logits_and_tiny_step() -> None:
     assert out["logits"].shape == (2, 5)
     assert torch.isfinite(loss)
     assert torch.isfinite(out["attractor_states"]).all()
+
+
+def test_efficient_eml_image_encoder_ablation_switches() -> None:
+    images, _ = _images()
+    model = EfficientEMLImageEncoder(
+        state_dim=24,
+        hidden_dim=48,
+        num_hypotheses=4,
+        num_attractors=1,
+        representation_dim=24,
+        patch_stride=4,
+        enable_composition=False,
+        enable_attractor=False,
+        sensor_bypass=True,
+    )
+
+    out = model(images, warmup_eta=0.5)
+
+    assert out["representation"].shape == (2, 24)
+    assert out["diagnostics"]["num_attractors"].item() == 0
+    assert "sensor_bypass_alpha" in out["diagnostics"]
+    assert torch.isfinite(out["representation"]).all()

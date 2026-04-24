@@ -409,21 +409,32 @@ class EMLResponsibility(nn.Module):
         use_null: bool = True,
         null_logit: float = 0.0,
         learnable_null: bool = False,
+        mode: str = "standard",
+        evidence_threshold: float = 0.0,
+        learnable_threshold: bool = False,
         eps: float = 1.0e-8,
     ) -> None:
         super().__init__()
+        if mode not in {"standard", "thresholded_null"}:
+            raise ValueError("mode must be 'standard' or 'thresholded_null'")
         if temperature <= 0.0:
             raise ValueError("temperature must be positive")
         if eps <= 0.0:
             raise ValueError("eps must be positive")
         self.register_buffer("temperature", torch.tensor(float(temperature), dtype=FP32_DTYPE))
         self.use_null = bool(use_null)
+        self.mode = mode
         self.eps = float(eps)
         null_value = torch.tensor(float(null_logit), dtype=FP32_DTYPE)
         if learnable_null:
             self.null_logit = nn.Parameter(null_value)
         else:
             self.register_buffer("null_logit", null_value)
+        threshold_value = torch.tensor(float(evidence_threshold), dtype=FP32_DTYPE)
+        if learnable_threshold:
+            self.evidence_threshold = nn.Parameter(threshold_value)
+        else:
+            self.register_buffer("evidence_threshold", threshold_value)
 
     def forward(
         self,
@@ -431,11 +442,16 @@ class EMLResponsibility(nn.Module):
         mask: torch.Tensor | None = None,
         temperature: float | torch.Tensor | None = None,
         use_null: bool | None = None,
+        mode: str | None = None,
+        evidence_threshold: float | torch.Tensor | None = None,
     ) -> Dict[str, torch.Tensor | None]:
         if energy.ndim == 0:
             raise ValueError("energy must have at least one dimension")
         if mask is not None and mask.shape != energy.shape:
             raise ValueError("mask must match energy shape")
+        effective_mode = self.mode if mode is None else mode
+        if effective_mode not in {"standard", "thresholded_null"}:
+            raise ValueError("mode must be 'standard' or 'thresholded_null'")
 
         original_dtype = energy.dtype
         energy_fp32 = _to_fp32(energy)
@@ -447,15 +463,30 @@ class EMLResponsibility(nn.Module):
             temperature_fp32 = torch.tensor(float(temperature), device=energy.device, dtype=FP32_DTYPE)
         temperature_fp32 = temperature_fp32.clamp_min(self.eps)
 
-        logits = energy_fp32 / temperature_fp32
+        if evidence_threshold is None:
+            threshold_fp32 = self.evidence_threshold.to(device=energy.device, dtype=FP32_DTYPE)
+        elif torch.is_tensor(evidence_threshold):
+            threshold_fp32 = evidence_threshold.to(device=energy.device, dtype=FP32_DTYPE)
+        else:
+            threshold_fp32 = torch.tensor(float(evidence_threshold), device=energy.device, dtype=FP32_DTYPE)
+
+        if effective_mode == "thresholded_null":
+            logits = (energy_fp32 - threshold_fp32) / temperature_fp32
+        else:
+            logits = energy_fp32 / temperature_fp32
         mask_bool: torch.Tensor | None = None
         if mask is not None:
             mask_bool = mask.to(device=energy.device, dtype=torch.bool)
             logits = logits.masked_fill(~mask_bool, torch.finfo(FP32_DTYPE).min)
 
         effective_use_null = self.use_null if use_null is None else bool(use_null)
+        if effective_mode == "thresholded_null":
+            effective_use_null = True
         if effective_use_null:
-            null_logit = self.null_logit.to(device=energy.device, dtype=FP32_DTYPE)
+            if effective_mode == "thresholded_null":
+                null_logit = torch.zeros((), device=energy.device, dtype=FP32_DTYPE)
+            else:
+                null_logit = self.null_logit.to(device=energy.device, dtype=FP32_DTYPE)
             null_shape = (*logits.shape[:-1], 1)
             null_logits = null_logit.expand(null_shape)
             all_logits = torch.cat([logits, null_logits], dim=-1)
@@ -511,6 +542,8 @@ class EMLResponsibility(nn.Module):
             "weight_mass": weight_mass_fp32,
             "logits": all_logits.to(dtype=original_dtype),
             "logits_fp32": all_logits,
+            "evidence_threshold": threshold_fp32.to(dtype=original_dtype),
+            "evidence_threshold_fp32": threshold_fp32,
         }
 
 
@@ -522,6 +555,9 @@ class EMLPrecisionUpdate(nn.Module):
         mode: str = "precision",
         eps: float = 1.0e-6,
         gate_temperature: float = 1.0,
+        old_confidence_init: float = 5.0,
+        new_energy_bias: float = 0.0,
+        update_threshold: float = 0.0,
     ) -> None:
         super().__init__()
         if mode not in {"precision", "sigmoid"}:
@@ -533,6 +569,9 @@ class EMLPrecisionUpdate(nn.Module):
         self.mode = mode
         self.eps = float(eps)
         self.register_buffer("gate_temperature", torch.tensor(float(gate_temperature), dtype=FP32_DTYPE))
+        self.register_buffer("old_confidence_init", torch.tensor(float(old_confidence_init), dtype=FP32_DTYPE))
+        self.register_buffer("new_energy_bias", torch.tensor(float(new_energy_bias), dtype=FP32_DTYPE))
+        self.register_buffer("update_threshold", torch.tensor(float(update_threshold), dtype=FP32_DTYPE))
 
     def forward(
         self,
@@ -551,10 +590,16 @@ class EMLPrecisionUpdate(nn.Module):
 
         state_dtype = state.dtype
         new_energy_fp32 = _to_fp32(new_energy)
+        new_energy_fp32 = (
+            new_energy_fp32
+            + self.new_energy_bias.to(device=state.device, dtype=FP32_DTYPE)
+            - self.update_threshold.to(device=state.device, dtype=FP32_DTYPE)
+        )
+        old_bias_fp32 = self.old_confidence_init.to(device=state.device, dtype=FP32_DTYPE)
         if old_confidence is None:
-            old_confidence_fp32 = torch.zeros_like(new_energy_fp32)
+            old_confidence_fp32 = torch.zeros_like(new_energy_fp32) + old_bias_fp32
         else:
-            old_confidence_fp32 = _to_fp32(old_confidence)
+            old_confidence_fp32 = _to_fp32(old_confidence) + old_bias_fp32
 
         if effective_mode == "precision":
             new_precision_fp32 = F.softplus(new_energy_fp32) + self.eps
@@ -587,6 +632,9 @@ class EMLPrecisionUpdate(nn.Module):
             "old_precision": old_precision_fp32.to(dtype=state_dtype),
             "new_precision_fp32": new_precision_fp32,
             "old_precision_fp32": old_precision_fp32,
+            "update_gate_init_mean": update_gate_fp32.detach().mean(),
+            "adjusted_new_energy": new_energy_fp32.to(dtype=state_dtype),
+            "adjusted_old_confidence": old_confidence_fp32.to(dtype=state_dtype),
         }
 
 

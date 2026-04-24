@@ -218,14 +218,22 @@ class ClassificationHead(nn.Module):
         hidden_dim: int,
         clip_value: float = 3.0,
         temperature: float = 0.5,
+        center_ambiguity: bool = True,
+        ambiguity_weight: float = 1.0,
+        schedule_ambiguity_weight: bool = True,
     ) -> None:
         super().__init__()
         if input_dim <= 0 or num_classes <= 0 or hidden_dim <= 0:
             raise ValueError("input_dim, num_classes, and hidden_dim must be positive")
+        if ambiguity_weight < 0.0:
+            raise ValueError("ambiguity_weight must be non-negative")
 
         self.input_dim = input_dim
         self.num_classes = num_classes
         self.temperature = temperature
+        self.center_ambiguity = bool(center_ambiguity)
+        self.ambiguity_weight = float(ambiguity_weight)
+        self.schedule_ambiguity_weight = bool(schedule_ambiguity_weight)
 
         self.prototypes = nn.Parameter(torch.empty(num_classes, input_dim))
         self.drive_residual = _MLP(input_dim, hidden_dim, num_classes)
@@ -253,11 +261,23 @@ class ClassificationHead(nn.Module):
             eye_mask = torch.eye(self.num_classes, device=similarity.device, dtype=torch.bool).unsqueeze(0)
             expanded_similarity = scaled_similarity.unsqueeze(1).expand(-1, self.num_classes, -1)
             ambiguity = torch.logsumexp(expanded_similarity.masked_fill(eye_mask, float("-inf")), dim=-1)
+            if self.center_ambiguity:
+                ambiguity = ambiguity - torch.log(
+                    torch.tensor(float(self.num_classes - 1), device=similarity.device, dtype=similarity.dtype)
+                )
         else:
             ambiguity = torch.zeros_like(drive)
+        if torch.is_tensor(warmup_eta):
+            eta = warmup_eta.to(device=representation.device, dtype=representation.dtype).clamp(0.0, 1.0)
+        else:
+            eta = torch.tensor(float(warmup_eta), device=representation.device, dtype=representation.dtype).clamp(0.0, 1.0)
+        ambiguity_weight = torch.tensor(self.ambiguity_weight, device=representation.device, dtype=representation.dtype)
+        if self.schedule_ambiguity_weight:
+            ambiguity_weight = ambiguity_weight * eta
+        weighted_ambiguity = ambiguity_weight * ambiguity
         class_resistance = F.softplus(self.raw_class_resistance).unsqueeze(0).expand_as(drive)
         sample_uncertainty = F.softplus(self.uncertainty_head(representation)).expand_as(drive)
-        resistance = ambiguity + class_resistance + sample_uncertainty
+        resistance = weighted_ambiguity + class_resistance + sample_uncertainty
         score_out = self.score(drive, resistance, warmup_eta=warmup_eta)
         if self.num_classes > 1:
             prototype_cosine = normalized_prototypes @ normalized_prototypes.t()
@@ -276,6 +296,8 @@ class ClassificationHead(nn.Module):
             "energy": score_out["energy"],
             "similarity": similarity,
             "ambiguity": ambiguity,
+            "weighted_ambiguity": weighted_ambiguity,
+            "ambiguity_weight": ambiguity_weight.expand_as(ambiguity),
             "class_resistance": class_resistance,
             "class_radius": class_resistance,
             "sample_uncertainty": sample_uncertainty[:, :1],

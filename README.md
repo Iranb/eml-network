@@ -33,7 +33,13 @@ local evidence
 -> representation readout
 ```
 
-Image field encoder and text field encoder are now the primary validation paths. Old MNIST, CNN, and PureEML models remain compatibility baselines. Prototype and novelty behavior remains auxiliary only.
+Image field encoder and text field encoder are primary validation paths for the research direction. Old MNIST, CNN, PureEML, and text backbones remain compatibility baselines and must not be deleted.
+
+Current evidence is deliberately conservative:
+- `cnn_eml` is the strongest stable image baseline observed so far.
+- EML as a CNN head has not yet been proven better than ordinary linear, MLP, or cosine prototype heads on the same frozen features.
+- Efficient EML representation trunks are still under validation and should not be described as proven replacements for CNN/local text baselines.
+- Prototype, novelty, and GCD-style behavior remain auxiliary, not the central claim.
 
 ## Core Primitive
 
@@ -209,7 +215,27 @@ Planning documents:
 - [reports/EXPERIMENT_PLAN.md](./reports/EXPERIMENT_PLAN.md)
 - [reports/ABLATION_MATRIX.md](./reports/ABLATION_MATRIX.md)
 
-Current verified result status: only smoke-scale local CPU results should be treated as verified unless a report artifact says otherwise. Medium/full CIFAR and multi-seed ablations are not claimed until they appear in `reports/runs/summary.csv`.
+Focused stabilization reports:
+- [reports/HEAD_ABLATION_REPORT.md](./reports/HEAD_ABLATION_REPORT.md): frozen CNN feature head isolation.
+- [reports/CNN_HEAD_END_TO_END_REPORT.md](./reports/CNN_HEAD_END_TO_END_REPORT.md): end-to-end CNN plus head ablation.
+- [reports/MECHANISM_PROBE_REPORT.md](./reports/MECHANISM_PROBE_REPORT.md): nontrivial mechanism probes for responsibility, null routing, precision updates, composition, and attractors.
+- [reports/IMAGE_REPRESENTATION_ABLATION_REPORT.md](./reports/IMAGE_REPRESENTATION_ABLATION_REPORT.md): synthetic image representation ablations, including no-composition/no-attractor/head-without-ambiguity variants.
+- [reports/TEXT_REPRESENTATION_ABLATION_REPORT.md](./reports/TEXT_REPRESENTATION_ABLATION_REPORT.md): synthetic text representation ablations with window-8 as the default efficient path.
+- [reports/CIFAR_MEDIUM_REPORT.md](./reports/CIFAR_MEDIUM_REPORT.md): CIFAR medium status, gated by synthetic image success.
+- [reports/EML_MASTER_NEXT_STEP_REPORT.md](./reports/EML_MASTER_NEXT_STEP_REPORT.md): master stop/go report.
+
+Stabilization smoke commands:
+
+```bash
+python scripts/run_head_ablation.py --dataset synthetic_shape --mode smoke --seeds 0 1 --num-workers 0
+python scripts/run_cnn_head_end_to_end_ablation.py --dataset synthetic_shape --mode smoke --seeds 0 1 --num-workers 0
+python scripts/run_mechanism_probes.py --mode smoke --seeds 0 1
+python scripts/run_image_representation_ablation.py --mode smoke --seeds 0 1 --num-workers 0
+python scripts/run_text_representation_ablation.py --mode smoke --seeds 0 1 --num-workers 0
+python scripts/generate_master_eml_report.py
+```
+
+Current verified result status: only completed report artifacts should be treated as verified. Medium/full CIFAR and multi-seed ablations are not claimed until they appear in the relevant `summary.csv`.
 
 Known validation limitations:
 - smoke runs are too short for research conclusions

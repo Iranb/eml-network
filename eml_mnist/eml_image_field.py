@@ -449,9 +449,6 @@ class EMLImageFieldClassifier(nn.Module):
     ) -> Dict[str, Any]:
         encoder_out = self.encoder(images, warmup_eta=warmup_eta)
         classifier_out = self.classifier(encoder_out["representation"], warmup_eta=warmup_eta)
-        ambiguity = self.classifier.compute_ambiguity(
-            classifier_out["similarity"] / self.classifier.prototype_temperature
-        )
 
         return {
             "logits": classifier_out["logits"],
@@ -460,7 +457,9 @@ class EMLImageFieldClassifier(nn.Module):
             "drive": classifier_out["drive"],
             "resistance": classifier_out["resistance"],
             "energy": classifier_out["energy"],
-            "ambiguity": ambiguity,
+            "ambiguity": classifier_out["ambiguity"],
+            "weighted_ambiguity": classifier_out["weighted_ambiguity"],
+            "ambiguity_weight": classifier_out["ambiguity_weight"],
             "class_radius": classifier_out["class_radius"],
             "sample_uncertainty": classifier_out["sample_uncertainty"],
             "similarity": classifier_out["similarity"],
