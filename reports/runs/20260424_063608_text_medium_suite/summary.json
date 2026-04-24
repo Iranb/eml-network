@@ -1,0 +1,23 @@
+{
+  "cuda_available": false,
+  "dataset_name": "SyntheticTextEnergyDataset",
+  "device": "cpu",
+  "git_commit": "ae26ee9",
+  "hostname": "BMW-Pro.local",
+  "metrics_json": "{}",
+  "mode": "smoke",
+  "model_name": "selected_text_models",
+  "num_params": 0,
+  "platform": "macOS-26.0-arm64-arm-64bit",
+  "python_version": "3.12.12",
+  "reason": "smoke mode: not requested in this mode",
+  "run_dir": "reports/runs/20260424_063608_text_medium_suite",
+  "run_id": "text_medium_suite",
+  "seed": 0,
+  "status": "NOT RUN",
+  "task_name": "text_synthetic",
+  "timestamp": "2026-04-24T06:36:08Z",
+  "torch_version": "2.10.0",
+  "torchvision_version": "unavailable",
+  "trainable_params": 0
+}

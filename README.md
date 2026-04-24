@@ -170,6 +170,53 @@ Optional MNIST baseline:
 python train_mnist.py --epochs 1
 ```
 
+## Validation and Ablation Reports
+
+The validation suite is the preferred way to compare EML baselines, field models, and efficient representation models without fabricating missing results.
+
+Smoke validation:
+
+```bash
+python scripts/run_eml_validation_suite.py --mode smoke --device cpu
+python scripts/generate_eml_report.py
+```
+
+Longer modes:
+
+```bash
+python scripts/run_eml_validation_suite.py --mode ablation --device cuda
+python scripts/run_eml_validation_suite.py --mode cifar-medium --device cuda
+python scripts/run_eml_validation_suite.py --mode text-medium --device cuda
+python scripts/generate_eml_report.py
+```
+
+Artifacts are written under:
+
+```text
+reports/runs/<timestamp>_<run_id>/
+  config.json
+  history.json
+  metrics.csv
+  diagnostics.csv
+  summary.json
+  model_info.json
+  artifacts.json
+reports/runs/summary.csv
+reports/EML_VALIDATION_REPORT.md
+```
+
+Planning documents:
+- [reports/EXPERIMENT_PLAN.md](./reports/EXPERIMENT_PLAN.md)
+- [reports/ABLATION_MATRIX.md](./reports/ABLATION_MATRIX.md)
+
+Current verified result status: only smoke-scale local CPU results should be treated as verified unless a report artifact says otherwise. Medium/full CIFAR and multi-seed ablations are not claimed until they appear in `reports/runs/summary.csv`.
+
+Known validation limitations:
+- smoke runs are too short for research conclusions
+- torchvision may be unavailable in some environments
+- real-data runs are optional and must be marked `NOT RUN` when unavailable
+- efficiency metrics are approximate unless the runner records device memory and stable timing
+
 ## Diagnostics
 
 Training scripts and the foundation core expose:

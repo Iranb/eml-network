@@ -1,0 +1,12 @@
+{
+  "mode": "ablation",
+  "seeds": [0, 1],
+  "planned_axes": [
+    "responsibility_mode",
+    "null_route",
+    "state_update",
+    "warmup",
+    "attractor_count"
+  ],
+  "notes": "One-factor-at-a-time ablation plan. Unsupported cells must be recorded as NOT RUN."
+}

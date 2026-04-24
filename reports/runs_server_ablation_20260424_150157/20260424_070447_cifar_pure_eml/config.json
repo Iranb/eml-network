@@ -1,0 +1,14 @@
+{
+  "batch_size": 256,
+  "dataset_name": "CIFAR10",
+  "device": "cuda",
+  "early_stop": true,
+  "eval_batches": 20,
+  "min_delta": 0.001,
+  "mode": "cifar-medium",
+  "model_name": "pure_eml",
+  "patience": 6,
+  "seed": 1,
+  "steps": 800,
+  "task_name": "image_cifar"
+}

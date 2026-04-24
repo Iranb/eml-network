@@ -1,0 +1,23 @@
+{
+  "cuda_available": true,
+  "dataset_name": "SyntheticShapeEnergyDataset",
+  "device": "cuda",
+  "git_commit": "unknown",
+  "hostname": "user-NF5468M6",
+  "metrics_json": "{}",
+  "mode": "ablation",
+  "model_name": "pure_eml",
+  "num_params": 0,
+  "platform": "Linux-5.4.0-216-generic-x86_64-with-glibc2.31",
+  "python_version": "3.10.20",
+  "reason": "RuntimeError(\"Too many open files. Communication with the workers is no longer possible. Please increase the limit using `ulimit -n` in the shell or change the sharing strategy by calling `torch.multiprocessing.set_sharing_strategy('file_system')` at the beginning of your code\")",
+  "run_dir": "reports/runs_server_ablation_20260424_150157/20260424_070206_ablation_image_pure_eml",
+  "run_id": "ablation_image_pure_eml",
+  "seed": 0,
+  "status": "FAILED",
+  "task_name": "image_synthetic",
+  "timestamp": "2026-04-24T07:02:06Z",
+  "torch_version": "2.7.1+cu118",
+  "torchvision_version": "0.22.1+cu118",
+  "trainable_params": 0
+}

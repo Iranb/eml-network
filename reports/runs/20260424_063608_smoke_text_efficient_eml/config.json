@@ -1,0 +1,11 @@
+{
+  "batch_size": 8,
+  "dataset_name": "SyntheticTextEnergyDataset",
+  "device": "cpu",
+  "mode": "smoke",
+  "model_name": "EfficientEMLTextEncoder",
+  "seed": 2,
+  "seq_len": 48,
+  "steps": 4,
+  "task_name": "text_synthetic"
+}

@@ -1,0 +1,10 @@
+{
+  "mode": "smoke",
+  "seeds": [0],
+  "image_steps": 4,
+  "text_steps": 4,
+  "batch_size": 8,
+  "image_size": 32,
+  "seq_len": 48,
+  "notes": "CPU-safe validation path. Results are smoke checks, not research conclusions."
+}

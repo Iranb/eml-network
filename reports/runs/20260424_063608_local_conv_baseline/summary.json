@@ -1,0 +1,23 @@
+{
+  "cuda_available": false,
+  "dataset_name": "SyntheticShapeEnergyDataset",
+  "device": "cpu",
+  "git_commit": "ae26ee9",
+  "hostname": "BMW-Pro.local",
+  "metrics_json": "{}",
+  "mode": "smoke",
+  "model_name": "LocalConvBaseline",
+  "num_params": 0,
+  "platform": "macOS-26.0-arm64-arm-64bit",
+  "python_version": "3.12.12",
+  "reason": "smoke mode: not implemented",
+  "run_dir": "reports/runs/20260424_063608_local_conv_baseline",
+  "run_id": "local_conv_baseline",
+  "seed": 0,
+  "status": "NOT RUN",
+  "task_name": "image_synthetic",
+  "timestamp": "2026-04-24T06:36:08Z",
+  "torch_version": "2.10.0",
+  "torchvision_version": "unavailable",
+  "trainable_params": 0
+}

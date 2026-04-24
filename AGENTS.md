@@ -129,8 +129,19 @@ Do not build in this phase:
 
 ## Validation Rules
 
+Always produce durable report artifacts for experiments:
+- write raw run data under `reports/runs/`
+- maintain `reports/runs/summary.csv`
+- regenerate `reports/EML_VALIDATION_REPORT.md` after validation runs
+- never fabricate experiment results
+- mark unrun experiments as `NOT RUN` and record the reason
+- record failed runs with failure reasons when practical
+- focus on ablation and measured diagnostics before adding new architecture
+
 Always run after meaningful changes:
 - `pytest`
+- `python scripts/run_eml_validation_suite.py --mode smoke --device cpu`
+- `python scripts/generate_eml_report.py`
 - `python scripts/train_eml_image_field.py --steps 50 --device cpu`
 - `python scripts/train_eml_text_field.py --steps 50 --device cpu`
 - `python scripts/train_eml_field_foundation.py --steps 50 --device cpu`

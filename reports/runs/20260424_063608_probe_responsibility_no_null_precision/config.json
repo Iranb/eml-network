@@ -1,0 +1,11 @@
+{
+  "dataset_name": "synthetic_probe_tensors",
+  "device": "cpu",
+  "mode": "smoke",
+  "model_name": "probe_responsibility_no_null_precision",
+  "responsibility_mode": true,
+  "seed": 4,
+  "task_name": "mechanism_probe",
+  "update_mode": "precision",
+  "use_null": false
+}
