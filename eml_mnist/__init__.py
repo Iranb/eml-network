@@ -1,4 +1,6 @@
 from .eml_image_field import EMLImageFieldClassifier, EMLImageFieldEncoder
+from .eml_repr_image import EfficientEMLImageClassifier, EfficientEMLImageEncoder
+from .eml_repr_text import EfficientEMLTextEncoder, EfficientEMLTextGenerationHead
 from .eml_text_field import EMLTextFieldEncoder, EMLTextFieldGenerationHead
 from .foundation import EMLFoundationCore
 from .field import (
@@ -24,7 +26,17 @@ from .image_backbones import PureEMLImageBackbone, PureEMLImageClassifier
 from .image_codecs import LocalImageChunkCodec
 from .image_datasets import SyntheticShapeDataset, SyntheticShapeEnergyDataset
 from .model import CNNEMLStageNet, MNISTEMLNet, PureEMLMNISTNet, PureEMLV2MNISTNet, build_mnist_eml_model
-from .primitives import EMLActivationBudget, EMLBank, EMLGate, EMLMessageGate, EMLScore, EMLUnit, EMLUpdateGate
+from .primitives import (
+    EMLActivationBudget,
+    EMLBank,
+    EMLGate,
+    EMLMessageGate,
+    EMLPrecisionUpdate,
+    EMLResponsibility,
+    EMLScore,
+    EMLUnit,
+    EMLUpdateGate,
+)
 from .text_backbones import EMLCausalLocalMessageBlock, EMLTextBackbone
 from .text_codecs import CharVocabulary, LocalTextCodec
 from .text_datasets import SyntheticGrammarDataset, SyntheticTextEnergyDataset
@@ -42,6 +54,10 @@ __all__ = [
     "CharVocabulary",
     "ClassificationHead",
     "CNNEMLStageNet",
+    "EfficientEMLImageClassifier",
+    "EfficientEMLImageEncoder",
+    "EfficientEMLTextEncoder",
+    "EfficientEMLTextGenerationHead",
     "EMLImageFieldClassifier",
     "EMLImageFieldEncoder",
     "EMLTextFieldEncoder",
@@ -58,6 +74,8 @@ __all__ = [
     "EMLHypothesisCompetition",
     "EMLHypothesisField",
     "EMLMessageGate",
+    "EMLPrecisionUpdate",
+    "EMLResponsibility",
     "EMLMessagePassing",
     "EMLSensor",
     "EMLScore",

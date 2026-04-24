@@ -25,6 +25,18 @@ EMLSensor
 
 Image field and text field encoders are primary validation paths. PureEML image backbones, EMLTextBackbone, CNN, and MNIST models are compatibility baselines.
 
+The efficient representation path is also primary for this phase:
+
+```text
+local evidence
+-> support/conflict decomposition
+-> EML responsibility propagation
+-> precision update
+-> composition
+-> attractor memory
+-> representation readout
+```
+
 ## Durable Architecture Rules
 
 Always preserve the drive / resistance split.
@@ -72,6 +84,7 @@ Required:
 - run `expm1`, `log`, and `softplus` in fp32 islands
 - cast outputs back to input dtype only after the sensitive ops
 - keep diagnostics available for drive, resistance, energy, and gates
+- preserve responsibility/null/update diagnostics for representation modules
 
 ## Allowed Components
 
@@ -102,6 +115,8 @@ Forbidden:
 
 Do not make GCD central.
 Do not build backend or OpenClaw integration unless explicitly asked.
+Optimize representation code for local windows and small attractor counts.
+Keep old baselines compatible.
 
 ## This Phase Is Not
 
@@ -119,6 +134,9 @@ Always run after meaningful changes:
 - `python scripts/train_eml_image_field.py --steps 50 --device cpu`
 - `python scripts/train_eml_text_field.py --steps 50 --device cpu`
 - `python scripts/train_eml_field_foundation.py --steps 50 --device cpu`
+- `python scripts/train_efficient_eml_image_repr.py --steps 50 --device cpu`
+- `python scripts/train_efficient_eml_text_repr.py --steps 50 --device cpu`
+- `python scripts/train_efficient_eml_foundation_repr.py --steps 50 --device cpu`
 - `python scripts/train_image_shapes.py --steps 50`
 - `python scripts/train_text_grammar.py --steps 50`
 - `python scripts/train_foundation_core.py --steps 50`

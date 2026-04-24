@@ -7,6 +7,8 @@ import torch
 import torch.nn as nn
 
 from .eml_image_field import EMLImageFieldEncoder
+from .eml_repr_image import EfficientEMLImageEncoder
+from .eml_repr_text import EfficientEMLTextEncoder, EfficientEMLTextGenerationHead
 from .eml_text_field import EMLTextFieldEncoder, EMLTextFieldGenerationHead
 from .graph import EMLSlotGraphLayer, SlotBank
 from .heads import (
@@ -25,7 +27,19 @@ from .text_heads import LocalTextGenerationHead
 
 def _collect_nested_stats(
     container: Any,
-    names: Sequence[str] = ("drive", "resistance", "energy", "gate", "active_route_strength", "gate_mass"),
+    names: Sequence[str] = (
+        "drive",
+        "resistance",
+        "energy",
+        "gate",
+        "active_route_strength",
+        "gate_mass",
+        "weight_mass",
+        "null_weight",
+        "update_strength",
+        "responsibility_entropy",
+        "message_norm",
+    ),
 ) -> Dict[str, float]:
     collected = {name: [] for name in names}
 
@@ -102,6 +116,11 @@ class EMLFoundationCore(nn.Module):
         enable_text_field_encoder: bool = False,
         image_field_config: Mapping[str, Any] | None = None,
         text_field_config: Mapping[str, Any] | None = None,
+        enable_efficient_image_encoder: bool = False,
+        enable_efficient_text_encoder: bool = False,
+        image_repr_config: Mapping[str, Any] | None = None,
+        text_repr_config: Mapping[str, Any] | None = None,
+        inject_attractor_slots: bool | None = None,
         inject_attractors: bool = True,
         attractor_injection_mode: str = "residual",
     ) -> None:
@@ -131,10 +150,16 @@ class EMLFoundationCore(nn.Module):
 
         image_field_config_dict = dict(image_field_config or {})
         text_field_config_dict = dict(text_field_config or {})
+        image_repr_config_dict = dict(image_repr_config or {})
+        text_repr_config_dict = dict(text_repr_config or {})
         image_field_dim = int(image_field_config_dict.get("field_dim", image_feature_dim))
         image_field_representation_dim = int(image_field_config_dict.get("representation_dim", image_field_dim))
         text_field_dim = int(text_field_config_dict.get("field_dim", text_feature_dim))
         text_field_representation_dim = int(text_field_config_dict.get("representation_dim", text_field_dim))
+        image_repr_dim = int(image_repr_config_dict.get("state_dim", image_feature_dim))
+        image_repr_representation_dim = int(image_repr_config_dict.get("representation_dim", image_repr_dim))
+        text_repr_dim = int(text_repr_config_dict.get("state_dim", text_feature_dim))
+        text_repr_representation_dim = int(text_repr_config_dict.get("representation_dim", text_repr_dim))
 
         self.slot_dim = slot_dim
         self.event_dim = event_dim
@@ -142,10 +167,12 @@ class EMLFoundationCore(nn.Module):
         self.local_query_dim = local_query_dim
         self.enable_modality_slot_injection = enable_modality_slot_injection
         self.modality_slot_injection_mode = modality_slot_injection_mode
-        self.inject_attractors = inject_attractors
+        self.inject_attractors = inject_attractors if inject_attractor_slots is None else inject_attractor_slots
         self.attractor_injection_mode = attractor_injection_mode
         self.image_field_dim = image_field_dim
         self.text_field_dim = text_field_dim
+        self.image_repr_dim = image_repr_dim
+        self.text_repr_dim = text_repr_dim
         self.slot_bank = SlotBank(slot_dim=slot_dim, slot_layout=slot_layout)
         self.image_slot_proj = nn.Linear(image_feature_dim, slot_dim)
         self.text_slot_proj = nn.Linear(text_feature_dim, slot_dim)
@@ -158,6 +185,13 @@ class EMLFoundationCore(nn.Module):
         self.image_field_query_proj = nn.Linear(image_field_dim, local_query_dim)
         self.text_field_query_proj = nn.Linear(text_field_dim, local_query_dim)
         self.text_field_token_proj = nn.Linear(text_field_dim, text_feature_dim)
+        self.image_repr_event_proj = nn.Linear(image_repr_representation_dim, event_dim)
+        self.text_repr_event_proj = nn.Linear(text_repr_representation_dim, event_dim)
+        self.image_repr_attractor_slot_proj = nn.Linear(image_repr_dim, slot_dim)
+        self.text_repr_attractor_slot_proj = nn.Linear(text_repr_dim, slot_dim)
+        self.image_repr_query_proj = nn.Linear(image_repr_dim, local_query_dim)
+        self.text_repr_query_proj = nn.Linear(text_repr_dim, local_query_dim)
+        self.text_repr_token_proj = nn.Linear(text_repr_dim, text_feature_dim)
         nn.init.normal_(self.image_slot_proj.weight, mean=0.0, std=0.01)
         nn.init.zeros_(self.image_slot_proj.bias)
         nn.init.normal_(self.text_slot_proj.weight, mean=0.0, std=0.01)
@@ -174,6 +208,13 @@ class EMLFoundationCore(nn.Module):
             self.image_field_query_proj,
             self.text_field_query_proj,
             self.text_field_token_proj,
+            self.image_repr_event_proj,
+            self.text_repr_event_proj,
+            self.image_repr_attractor_slot_proj,
+            self.text_repr_attractor_slot_proj,
+            self.image_repr_query_proj,
+            self.text_repr_query_proj,
+            self.text_repr_token_proj,
         ):
             nn.init.normal_(projector.weight, mean=0.0, std=0.01)
             nn.init.zeros_(projector.bias)
@@ -271,6 +312,14 @@ class EMLFoundationCore(nn.Module):
             self.image_field_encoder = EMLImageFieldEncoder(**image_field_config_dict)
         else:
             self.image_field_encoder = None
+        if enable_efficient_image_encoder:
+            image_repr_config_dict.setdefault("input_channels", image_input_channels or 3)
+            image_repr_config_dict.setdefault("state_dim", image_repr_dim)
+            image_repr_config_dict.setdefault("hidden_dim", hidden_dim)
+            image_repr_config_dict.setdefault("representation_dim", image_repr_representation_dim)
+            self.efficient_image_encoder = EfficientEMLImageEncoder(**image_repr_config_dict)
+        else:
+            self.efficient_image_encoder = None
         self.image_heads = nn.ModuleDict()
         if image_head_specs is not None:
             for name, num_classes in image_head_specs.items():
@@ -312,6 +361,18 @@ class EMLFoundationCore(nn.Module):
             self.text_field_encoder = EMLTextFieldEncoder(**text_field_config_dict)
         else:
             self.text_field_encoder = None
+        if enable_efficient_text_encoder:
+            if text_vocab_size is None:
+                raise ValueError("text_vocab_size is required when enable_efficient_text_encoder is true")
+            text_repr_config_dict.setdefault("vocab_size", text_vocab_size)
+            text_repr_config_dict.setdefault("embed_dim", text_embed_dim)
+            text_repr_config_dict.setdefault("state_dim", text_repr_dim)
+            text_repr_config_dict.setdefault("hidden_dim", text_hidden_dim)
+            text_repr_config_dict.setdefault("representation_dim", text_repr_representation_dim)
+            text_repr_config_dict.setdefault("pad_id", text_pad_id)
+            self.efficient_text_encoder = EfficientEMLTextEncoder(**text_repr_config_dict)
+        else:
+            self.efficient_text_encoder = None
         self.text_generation_head = (
             LocalTextGenerationHead(
                 context_dim=representation_dim,
@@ -333,6 +394,16 @@ class EMLFoundationCore(nn.Module):
             if enable_text_field_encoder and text_vocab_size is not None
             else None
         )
+        self.efficient_text_generation_head = (
+            EfficientEMLTextGenerationHead(
+                state_dim=text_repr_dim,
+                hidden_dim=text_hidden_dim,
+                vocab_size=text_vocab_size,
+                clip_value=clip_value,
+            )
+            if enable_efficient_text_encoder and text_vocab_size is not None
+            else None
+        )
 
     def _project_local_queries(self, local_queries: torch.Tensor, modality: str) -> torch.Tensor:
         if local_queries.size(-1) == self.local_query_dim:
@@ -348,13 +419,16 @@ class EMLFoundationCore(nn.Module):
         image_inputs: torch.Tensor | None,
         image_backbone_outputs: Dict[str, Any] | None,
         image_field_outputs: Dict[str, Any] | None,
+        efficient_image_outputs: Dict[str, Any] | None,
         text_inputs: torch.Tensor | None,
         text_backbone_outputs: Dict[str, Any] | None,
         text_field_outputs: Dict[str, Any] | None,
+        efficient_text_outputs: Dict[str, Any] | None,
         text_padding_mask: torch.Tensor | None,
         local_queries: torch.Tensor | None,
         warmup_eta: float | torch.Tensor,
         use_field_path: bool,
+        use_efficient_repr_path: bool,
     ) -> tuple[torch.Tensor, Dict[str, Any], torch.Tensor | None]:
         outputs: Dict[str, Any] = {}
         resolved_local_queries = local_queries
@@ -364,6 +438,20 @@ class EMLFoundationCore(nn.Module):
                 raise ValueError("event must have shape [batch, event_dim]")
             outputs["event_input"] = {"event": event}
             return event, outputs, resolved_local_queries
+
+        if efficient_image_outputs is not None:
+            image_out = efficient_image_outputs
+            outputs["efficient_image"] = image_out
+            if resolved_local_queries is None:
+                resolved_local_queries = self.image_repr_query_proj(image_out["local_queries"])
+            return self.image_repr_event_proj(image_out["representation"]), outputs, resolved_local_queries
+
+        if image_inputs is not None and use_efficient_repr_path and self.efficient_image_encoder is not None:
+            image_out = self.efficient_image_encoder(image_inputs, warmup_eta=warmup_eta)
+            outputs["efficient_image"] = image_out
+            if resolved_local_queries is None:
+                resolved_local_queries = self.image_repr_query_proj(image_out["local_queries"])
+            return self.image_repr_event_proj(image_out["representation"]), outputs, resolved_local_queries
 
         if image_field_outputs is not None:
             image_out = image_field_outputs
@@ -394,6 +482,20 @@ class EMLFoundationCore(nn.Module):
             if resolved_local_queries is None:
                 resolved_local_queries = self._project_local_queries(image_out["local_queries"], "image")
             return image_out["event"], outputs, resolved_local_queries
+
+        if efficient_text_outputs is not None:
+            text_out = efficient_text_outputs
+            outputs["efficient_text"] = text_out
+            if resolved_local_queries is None:
+                resolved_local_queries = self.text_repr_query_proj(text_out["sequence_states"])
+            return self.text_repr_event_proj(text_out["representation"]), outputs, resolved_local_queries
+
+        if text_inputs is not None and use_efficient_repr_path and self.efficient_text_encoder is not None:
+            text_out = self.efficient_text_encoder(text_inputs, padding_mask=text_padding_mask, warmup_eta=warmup_eta)
+            outputs["efficient_text"] = text_out
+            if resolved_local_queries is None:
+                resolved_local_queries = self.text_repr_query_proj(text_out["sequence_states"])
+            return self.text_repr_event_proj(text_out["representation"]), outputs, resolved_local_queries
 
         if text_field_outputs is not None:
             text_out = text_field_outputs
@@ -452,6 +554,25 @@ class EMLFoundationCore(nn.Module):
                 fallback_type_ids.append(type_id)
 
         matching_type_ids = modality_type_ids or fallback_type_ids
+        if not matching_type_ids:
+            return torch.empty(0, device=device, dtype=torch.long)
+        type_ids = self.slot_bank.slot_type_ids.to(device=device)
+        mask = torch.zeros_like(type_ids, dtype=torch.bool)
+        for type_id in matching_type_ids:
+            mask |= type_ids == type_id
+        return torch.nonzero(mask, as_tuple=False).flatten()
+
+    def _slot_indices_for_representation(self, modality: str, device: torch.device) -> torch.Tensor:
+        preferred_type_ids = []
+        fallback_type_ids = []
+        for type_id, type_name in enumerate(self.slot_bank.slot_type_names):
+            lowered = type_name.lower()
+            if modality in lowered:
+                preferred_type_ids.append(type_id)
+            elif any(name in lowered for name in ("attractor", "global", "memory")):
+                fallback_type_ids.append(type_id)
+
+        matching_type_ids = preferred_type_ids or fallback_type_ids
         if not matching_type_ids:
             return torch.empty(0, device=device, dtype=torch.long)
         type_ids = self.slot_bank.slot_type_ids.to(device=device)
@@ -560,6 +681,58 @@ class EMLFoundationCore(nn.Module):
         }
         return updated_bank, diagnostics
 
+    def _inject_representation_slots(
+        self,
+        bank: Dict[str, torch.Tensor],
+        attractor_states: torch.Tensor | None,
+        modality: str,
+        projector: nn.Linear,
+    ) -> tuple[Dict[str, torch.Tensor], Dict[str, Any]]:
+        diagnostics: Dict[str, Any] = {
+            "injected_slots": 0,
+            "injection_norm": 0.0,
+            "slot_indices": [],
+            "skipped_reason": None,
+        }
+        if attractor_states is None:
+            diagnostics["skipped_reason"] = "no_attractor_states"
+            return bank, diagnostics
+        if attractor_states.ndim != 3:
+            raise ValueError("attractor_states must have shape [batch, attractors, dim]")
+        if attractor_states.size(0) != bank["slot_states"].size(0):
+            raise ValueError("attractor_states batch size must match the slot bank")
+        if attractor_states.size(-1) != projector.in_features:
+            raise ValueError(f"{modality} attractor_states last dimension does not match configured dim")
+
+        slot_indices = self._slot_indices_for_representation(modality, bank["slot_states"].device)
+        if slot_indices.numel() == 0:
+            diagnostics["skipped_reason"] = "no_matching_slots"
+            return bank, diagnostics
+
+        projected_slots = projector(attractor_states)
+        injected_count = min(projected_slots.size(1), slot_indices.numel())
+        if injected_count <= 0:
+            diagnostics["skipped_reason"] = "no_available_slots"
+            return bank, diagnostics
+
+        selected_indices = slot_indices[:injected_count]
+        selected_updates = projected_slots[:, :injected_count, :]
+        updated_slot_states = bank["slot_states"].clone()
+        if self.attractor_injection_mode == "overwrite":
+            updated_slot_states[:, selected_indices, :] = selected_updates
+        else:
+            updated_slot_states[:, selected_indices, :] = updated_slot_states[:, selected_indices, :] + selected_updates
+
+        updated_bank = self.slot_bank.compose(updated_slot_states)
+        updated_bank["slot_mask"] = bank["slot_mask"]
+        diagnostics = {
+            "injected_slots": int(injected_count),
+            "injection_norm": float(selected_updates.detach().norm(dim=-1).mean().item()),
+            "slot_indices": [int(index) for index in selected_indices.detach().cpu().tolist()],
+            "skipped_reason": None,
+        }
+        return updated_bank, diagnostics
+
     def _empty_modality_injection_diagnostics(self, enabled: bool) -> Dict[str, Any]:
         return {
             "enabled": enabled,
@@ -580,6 +753,18 @@ class EMLFoundationCore(nn.Module):
                 "skipped_reason": "disabled" if not enabled else "not_requested",
             },
             "text": {
+                "injected_slots": 0,
+                "injection_norm": 0.0,
+                "slot_indices": [],
+                "skipped_reason": "disabled" if not enabled else "not_requested",
+            },
+            "efficient_image": {
+                "injected_slots": 0,
+                "injection_norm": 0.0,
+                "slot_indices": [],
+                "skipped_reason": "disabled" if not enabled else "not_requested",
+            },
+            "efficient_text": {
                 "injected_slots": 0,
                 "injection_norm": 0.0,
                 "slot_indices": [],
@@ -650,6 +835,26 @@ class EMLFoundationCore(nn.Module):
             if isinstance(text_field_out, dict) and torch.is_tensor(text_field_out.get("attractor_states")):
                 bank, text_diag = self._inject_attractor_slots(bank, text_field_out["attractor_states"], "text")
                 attractor_injection["text"] = text_diag
+
+            efficient_image_out = modality_inputs.get("efficient_image")
+            if isinstance(efficient_image_out, dict) and torch.is_tensor(efficient_image_out.get("attractor_states")):
+                bank, image_diag = self._inject_representation_slots(
+                    bank,
+                    efficient_image_out["attractor_states"],
+                    "image",
+                    self.image_repr_attractor_slot_proj,
+                )
+                attractor_injection["efficient_image"] = image_diag
+
+            efficient_text_out = modality_inputs.get("efficient_text")
+            if isinstance(efficient_text_out, dict) and torch.is_tensor(efficient_text_out.get("attractor_states")):
+                bank, text_diag = self._inject_representation_slots(
+                    bank,
+                    efficient_text_out["attractor_states"],
+                    "text",
+                    self.text_repr_attractor_slot_proj,
+                )
+                attractor_injection["efficient_text"] = text_diag
             bank["slot_mask"] = effective_slot_mask
 
         current_slot_states = bank["slot_states"]
@@ -683,6 +888,10 @@ class EMLFoundationCore(nn.Module):
             for index in attractor_injection[modality]["slot_indices"]:
                 if index not in readout_slot_indices[modality]:
                     readout_slot_indices[modality].append(index)
+        for source_key, modality in (("efficient_image", "image"), ("efficient_text", "text")):
+            for index in attractor_injection[source_key]["slot_indices"]:
+                if index not in readout_slot_indices[modality]:
+                    readout_slot_indices[modality].append(index)
         readout_modality = self._representation_modality_diagnostics(
             representation_out["weights"],
             readout_slot_indices,
@@ -706,11 +915,13 @@ class EMLFoundationCore(nn.Module):
         image_features: Dict[str, Any] | None = None,
         image_backbone_outputs: Dict[str, Any] | None = None,
         image_field_outputs: Dict[str, Any] | None = None,
+        efficient_image_outputs: Dict[str, Any] | None = None,
         text_tokens: torch.Tensor | None = None,
         text_inputs: torch.Tensor | None = None,
         text_features: Dict[str, Any] | None = None,
         text_backbone_outputs: Dict[str, Any] | None = None,
         text_field_outputs: Dict[str, Any] | None = None,
+        efficient_text_outputs: Dict[str, Any] | None = None,
         text_padding_mask: torch.Tensor | None = None,
         slot_states: torch.Tensor | None = None,
         slot_mask: torch.Tensor | None = None,
@@ -722,19 +933,23 @@ class EMLFoundationCore(nn.Module):
         inject_modality_slots: bool | None = None,
         inject_attractors: bool | None = None,
         use_field_path: bool = True,
+        use_efficient_repr_path: bool = False,
     ) -> Dict[str, Any]:
         resolved_event, modality_inputs, resolved_local_queries = self._resolve_event_inputs(
             event=event,
             image_inputs=images if image_inputs is None else image_inputs,
             image_backbone_outputs=image_backbone_outputs if image_features is None else image_features,
             image_field_outputs=image_field_outputs,
+            efficient_image_outputs=efficient_image_outputs,
             text_inputs=text_tokens if text_inputs is None else text_inputs,
             text_backbone_outputs=text_backbone_outputs if text_features is None else text_features,
             text_field_outputs=text_field_outputs,
+            efficient_text_outputs=efficient_text_outputs,
             text_padding_mask=text_padding_mask,
             local_queries=local_queries,
             warmup_eta=warmup_eta,
             use_field_path=use_field_path,
+            use_efficient_repr_path=use_efficient_repr_path,
         )
         bank, core_out = self._run_core(
             event=resolved_event,
@@ -775,16 +990,23 @@ class EMLFoundationCore(nn.Module):
             outputs["patch_rank"] = self.patch_rank_head(core_out["representation"], candidate_patches, warmup_eta=warmup_eta)
         if self.prototype_novelty_head is not None:
             outputs["prototype_novelty"] = self.prototype_novelty_head(core_out["representation"], warmup_eta=warmup_eta)
-        if self.image_heads and any(key in outputs for key in ("image_backbone", "image_field")):
+        if self.image_heads and any(key in outputs for key in ("image_backbone", "image_field", "efficient_image")):
             outputs["image_heads"] = {
                 name: head(core_out["representation"], warmup_eta=warmup_eta)
                 for name, head in self.image_heads.items()
             }
-        if self.text_generation_head is not None and any(key in outputs for key in ("text_backbone", "text_field")):
-            text_codec_out = outputs["text_backbone"] if "text_backbone" in outputs else outputs["text_field"]
+        if self.text_generation_head is not None and any(key in outputs for key in ("text_backbone", "text_field", "efficient_text")):
+            if "text_backbone" in outputs:
+                text_codec_out = outputs["text_backbone"]
+            elif "text_field" in outputs:
+                text_codec_out = outputs["text_field"]
+            else:
+                text_codec_out = outputs["efficient_text"]
             sequence_features = text_codec_out["sequence_features"]
             if "text_field" in outputs:
                 sequence_features = self.text_field_token_proj(sequence_features)
+            if "efficient_text" in outputs:
+                sequence_features = self.text_repr_token_proj(sequence_features)
             outputs["text_generation"] = self.text_generation_head(
                 representation=core_out["representation"],
                 sequence_features=sequence_features,
@@ -796,6 +1018,13 @@ class EMLFoundationCore(nn.Module):
             outputs["text_field_generation"] = self.text_field_generation_head(
                 sequence_states=text_field_out["sequence_states"],
                 padding_mask=text_field_out["padding_mask"],
+                warmup_eta=warmup_eta,
+            )
+        if self.efficient_text_generation_head is not None and "efficient_text" in outputs:
+            text_repr_out = outputs["efficient_text"]
+            outputs["efficient_text_generation"] = self.efficient_text_generation_head(
+                sequence_states=text_repr_out["sequence_states"],
+                padding_mask=text_repr_out["padding_mask"],
                 warmup_eta=warmup_eta,
             )
 
@@ -823,6 +1052,8 @@ class EMLFoundationCore(nn.Module):
         if "image_field" in outputs:
             outputs["diagnostics"]["field_image"] = outputs["image_field"]["diagnostics"]
             outputs["diagnostics"]["image_field"] = outputs["image_field"]["diagnostics"]
+        if "efficient_image" in outputs:
+            outputs["diagnostics"]["efficient_image"] = outputs["efficient_image"]["diagnostics"]
         if "text_generation" in outputs:
             outputs["diagnostics"]["text_generation"] = outputs["text_generation"]
         if "text_field" in outputs:
@@ -830,6 +1061,10 @@ class EMLFoundationCore(nn.Module):
             outputs["diagnostics"]["text_field"] = outputs["text_field"]["diagnostics"]
         if "text_field_generation" in outputs:
             outputs["diagnostics"]["text_field_generation"] = outputs["text_field_generation"]
+        if "efficient_text" in outputs:
+            outputs["diagnostics"]["efficient_text"] = outputs["efficient_text"]["diagnostics"]
+        if "efficient_text_generation" in outputs:
+            outputs["diagnostics"]["efficient_text_generation"] = outputs["efficient_text_generation"]
 
         return outputs
 

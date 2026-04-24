@@ -5,7 +5,7 @@ from typing import Any
 import torch
 import torch.nn as nn
 
-from eml_mnist.graph import EMLMessagePassing, EMLSlotGraphLayer
+from eml_mnist.graph import EMLMessagePassing, EMLSlotGraphLayer, EMLStateUpdateCell
 
 
 def test_message_scale_stable_when_active_count_changes() -> None:
@@ -33,6 +33,20 @@ def test_no_nan_when_edges_are_masked() -> None:
 
     assert torch.isfinite(out["aggregated_messages"]).all()
     assert torch.allclose(out["aggregated_messages"], torch.zeros_like(out["aggregated_messages"]))
+    assert torch.isfinite(out["null_weight"]).all()
+    assert torch.allclose(out["null_weight"], torch.ones_like(out["null_weight"]))
+
+
+def test_old_gate_normalized_message_mode_still_works() -> None:
+    message_passing = EMLMessagePassing(slot_dim=8, event_dim=8, hidden_dim=16, responsibility_mode=False)
+    active_slot_states = torch.randn(2, 4, 8)
+    event = torch.randn(2, 8)
+
+    out = message_passing(active_slot_states=active_slot_states, event=event, warmup_eta=0.5)
+
+    assert out["aggregated_messages"].shape == (2, 4, 8)
+    assert torch.isfinite(out["aggregated_messages"]).all()
+    assert torch.isfinite(out["gate_mass"]).all()
 
 
 class _FixedRouter(nn.Module):
@@ -107,3 +121,50 @@ def test_low_route_gate_reduces_update_norm() -> None:
     high_update = (high_out["active_slot_states_after"] - high_out["active_slot_states_before"]).norm()
     assert high_update > low_update * 5.0
     assert low_out["active_route_strength"].shape == (2, 2)
+    assert high_out["update_norm_after"].mean() > low_out["update_norm_after"].mean() * 5.0
+    assert torch.isfinite(low_out["update_norm_before"]).all()
+    assert torch.isfinite(low_out["update_norm_after"]).all()
+
+
+def test_message_passing_returns_responsibility_diagnostics() -> None:
+    message_passing = EMLMessagePassing(slot_dim=8, event_dim=8, hidden_dim=16)
+    active_slot_states = torch.randn(2, 4, 8)
+    event = torch.randn(2, 8)
+
+    out = message_passing(active_slot_states=active_slot_states, event=event, warmup_eta=0.5)
+
+    assert "max_responsibility" in out
+    assert "responsibility_logits" in out
+    assert torch.isfinite(out["max_responsibility"]).all()
+    assert torch.isfinite(out["responsibility_logits"]).all()
+
+
+def test_state_update_precision_mode_bounds() -> None:
+    cell = EMLStateUpdateCell(slot_dim=8, event_dim=6, hidden_dim=16, update_mode="precision")
+    slot_states = torch.randn(2, 3, 8)
+    message = torch.randn(2, 3, 8)
+    event = torch.randn(2, 6)
+
+    out = cell(slot_states=slot_states, message=message, event=event, warmup_eta=0.5)
+
+    assert out["update_mode"] == "precision"
+    assert out["slot_states"].shape == slot_states.shape
+    assert (out["update_gate"] >= 0.0).all()
+    assert (out["update_gate"] <= 1.0).all()
+    assert torch.isfinite(out["new_precision"]).all()
+    assert torch.isfinite(out["old_precision"]).all()
+
+
+def test_state_update_sigmoid_mode_compatibility() -> None:
+    cell = EMLStateUpdateCell(slot_dim=8, event_dim=6, hidden_dim=16, update_mode="sigmoid")
+    slot_states = torch.randn(2, 3, 8)
+    message = torch.randn(2, 3, 8)
+    event = torch.randn(2, 6)
+
+    out = cell(slot_states=slot_states, message=message, event=event, warmup_eta=0.5)
+
+    assert out["update_mode"] == "sigmoid"
+    assert out["slot_states"].shape == slot_states.shape
+    assert torch.isfinite(out["slot_states"]).all()
+    assert (out["update_gate"] >= 0.0).all()
+    assert (out["update_gate"] <= 1.0).all()

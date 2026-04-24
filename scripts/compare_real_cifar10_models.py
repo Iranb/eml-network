@@ -18,7 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from eml_mnist import EMLImageFieldClassifier, build_mnist_eml_model
+from eml_mnist import EMLImageFieldClassifier, EfficientEMLImageClassifier, build_mnist_eml_model
 from eml_mnist.training import build_classification_loaders, resolve_device, set_seed
 
 
@@ -29,7 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--models",
         nargs="+",
-        default=["cnn_eml", "cnn_eml_stage", "pure_eml_v2", "eml_image_field"],
+        default=["cnn_eml", "pure_eml_v2", "eml_image_field", "efficient_eml_image"],
     )
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--epochs", type=int, default=3)
@@ -69,6 +69,20 @@ def make_model(name: str, args: argparse.Namespace) -> torch.nn.Module:
             clip_value=3.0,
             prototype_temperature=0.25,
             enable_parent_consensus=True,
+        )
+    if name == "efficient_eml_image":
+        return EfficientEMLImageClassifier(
+            num_classes=10,
+            input_channels=3,
+            state_dim=args.field_dim,
+            hidden_dim=args.hidden_dim,
+            num_hypotheses=8,
+            num_attractors=4,
+            representation_dim=args.field_dim,
+            patch_stride=4,
+            local_window_size=3,
+            composition_region_size=2,
+            clip_value=3.0,
         )
 
     config: Dict[str, Any] = {

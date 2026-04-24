@@ -6,6 +6,8 @@ import torch.nn as nn
 
 from eml_mnist import EMLFoundationCore
 from eml_mnist.eml_image_field import EMLImageFieldClassifier, EMLImageFieldEncoder
+from eml_mnist.eml_repr_image import EfficientEMLImageClassifier, EfficientEMLImageEncoder
+from eml_mnist.eml_repr_text import EfficientEMLTextEncoder, EfficientEMLTextGenerationHead
 from eml_mnist.eml_text_field import EMLTextFieldEncoder, EMLTextFieldGenerationHead
 from eml_mnist.field import (
     EMLAttractorMemory,
@@ -94,6 +96,28 @@ def test_no_forbidden_modules_in_text_field_core() -> None:
                 representation_dim=16,
             ),
             EMLTextFieldGenerationHead(state_dim=16, vocab_size=32, hidden_dim=32),
+        ]
+    )
+
+    assert not any(isinstance(module, nn.MultiheadAttention) for module in modules.modules())
+    assert not any("transformer" in module.__class__.__name__.lower() for module in modules.modules())
+
+
+def test_no_forbidden_modules_in_efficient_representation_core() -> None:
+    modules = nn.ModuleList(
+        [
+            EfficientEMLImageEncoder(state_dim=16, hidden_dim=32, num_hypotheses=3, num_attractors=3),
+            EfficientEMLImageClassifier(num_classes=5, state_dim=16, hidden_dim=32, num_hypotheses=3, num_attractors=3),
+            EfficientEMLTextEncoder(
+                vocab_size=32,
+                embed_dim=16,
+                state_dim=16,
+                hidden_dim=32,
+                num_hypotheses=3,
+                num_attractors=3,
+                causal_window_size=4,
+            ),
+            EfficientEMLTextGenerationHead(state_dim=16, vocab_size=32, hidden_dim=32),
         ]
     )
 

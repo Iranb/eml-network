@@ -400,6 +400,196 @@ def _binary_entropy(probability: torch.Tensor) -> torch.Tensor:
     return -(probability * torch.log(probability) + (1.0 - probability) * torch.log(1.0 - probability))
 
 
+class EMLResponsibility(nn.Module):
+    """Convert sEML energy into stable responsibility weights."""
+
+    def __init__(
+        self,
+        temperature: float = 1.0,
+        use_null: bool = True,
+        null_logit: float = 0.0,
+        learnable_null: bool = False,
+        eps: float = 1.0e-8,
+    ) -> None:
+        super().__init__()
+        if temperature <= 0.0:
+            raise ValueError("temperature must be positive")
+        if eps <= 0.0:
+            raise ValueError("eps must be positive")
+        self.register_buffer("temperature", torch.tensor(float(temperature), dtype=FP32_DTYPE))
+        self.use_null = bool(use_null)
+        self.eps = float(eps)
+        null_value = torch.tensor(float(null_logit), dtype=FP32_DTYPE)
+        if learnable_null:
+            self.null_logit = nn.Parameter(null_value)
+        else:
+            self.register_buffer("null_logit", null_value)
+
+    def forward(
+        self,
+        energy: torch.Tensor,
+        mask: torch.Tensor | None = None,
+        temperature: float | torch.Tensor | None = None,
+        use_null: bool | None = None,
+    ) -> Dict[str, torch.Tensor | None]:
+        if energy.ndim == 0:
+            raise ValueError("energy must have at least one dimension")
+        if mask is not None and mask.shape != energy.shape:
+            raise ValueError("mask must match energy shape")
+
+        original_dtype = energy.dtype
+        energy_fp32 = _to_fp32(energy)
+        if temperature is None:
+            temperature_fp32 = self.temperature.to(device=energy.device, dtype=FP32_DTYPE)
+        elif torch.is_tensor(temperature):
+            temperature_fp32 = temperature.to(device=energy.device, dtype=FP32_DTYPE)
+        else:
+            temperature_fp32 = torch.tensor(float(temperature), device=energy.device, dtype=FP32_DTYPE)
+        temperature_fp32 = temperature_fp32.clamp_min(self.eps)
+
+        logits = energy_fp32 / temperature_fp32
+        mask_bool: torch.Tensor | None = None
+        if mask is not None:
+            mask_bool = mask.to(device=energy.device, dtype=torch.bool)
+            logits = logits.masked_fill(~mask_bool, torch.finfo(FP32_DTYPE).min)
+
+        effective_use_null = self.use_null if use_null is None else bool(use_null)
+        if effective_use_null:
+            null_logit = self.null_logit.to(device=energy.device, dtype=FP32_DTYPE)
+            null_shape = (*logits.shape[:-1], 1)
+            null_logits = null_logit.expand(null_shape)
+            all_logits = torch.cat([logits, null_logits], dim=-1)
+            weights = torch.softmax(all_logits, dim=-1)
+            neighbor_weights_fp32 = weights[..., :-1]
+            null_weight_fp32 = weights[..., -1]
+        else:
+            all_logits = logits
+            if mask_bool is not None:
+                valid = mask_bool.any(dim=-1, keepdim=True)
+                safe_logits = torch.where(valid, logits, torch.zeros_like(logits))
+                neighbor_weights_fp32 = torch.softmax(safe_logits, dim=-1)
+                neighbor_weights_fp32 = torch.where(mask_bool, neighbor_weights_fp32, torch.zeros_like(neighbor_weights_fp32))
+                normalizer = neighbor_weights_fp32.sum(dim=-1, keepdim=True)
+                neighbor_weights_fp32 = torch.where(
+                    normalizer > 0.0,
+                    neighbor_weights_fp32 / normalizer.clamp_min(self.eps),
+                    torch.zeros_like(neighbor_weights_fp32),
+                )
+            else:
+                neighbor_weights_fp32 = torch.softmax(logits, dim=-1)
+            null_weight_fp32 = None
+
+        if mask_bool is not None:
+            neighbor_weights_fp32 = neighbor_weights_fp32.masked_fill(~mask_bool, 0.0)
+
+        weight_mass_fp32 = neighbor_weights_fp32.sum(dim=-1)
+        if null_weight_fp32 is None:
+            update_strength_fp32 = torch.ones_like(weight_mass_fp32)
+        else:
+            update_strength_fp32 = (1.0 - null_weight_fp32).clamp(0.0, 1.0)
+
+        entropy_terms = neighbor_weights_fp32.clamp_min(self.eps)
+        entropy_fp32 = -(neighbor_weights_fp32 * entropy_terms.log()).sum(dim=-1)
+        if null_weight_fp32 is not None:
+            null_terms = null_weight_fp32.clamp_min(self.eps)
+            entropy_fp32 = entropy_fp32 - null_weight_fp32 * null_terms.log()
+        max_weight_fp32 = neighbor_weights_fp32.max(dim=-1).values if neighbor_weights_fp32.size(-1) else weight_mass_fp32
+
+        neighbor_weights = neighbor_weights_fp32.to(dtype=original_dtype)
+        null_weight = null_weight_fp32.to(dtype=original_dtype) if null_weight_fp32 is not None else None
+        update_strength = update_strength_fp32.to(dtype=original_dtype)
+        return {
+            "neighbor_weights": neighbor_weights,
+            "neighbor_weights_fp32": neighbor_weights_fp32,
+            "null_weight": null_weight,
+            "null_weight_fp32": null_weight_fp32,
+            "update_strength": update_strength,
+            "update_strength_fp32": update_strength_fp32,
+            "entropy": entropy_fp32,
+            "max_weight": max_weight_fp32,
+            "max_responsibility": max_weight_fp32,
+            "weight_mass": weight_mass_fp32,
+            "logits": all_logits.to(dtype=original_dtype),
+            "logits_fp32": all_logits,
+        }
+
+
+class EMLPrecisionUpdate(nn.Module):
+    """Precision-style EML state update with a compatibility sigmoid mode."""
+
+    def __init__(
+        self,
+        mode: str = "precision",
+        eps: float = 1.0e-6,
+        gate_temperature: float = 1.0,
+    ) -> None:
+        super().__init__()
+        if mode not in {"precision", "sigmoid"}:
+            raise ValueError("mode must be 'precision' or 'sigmoid'")
+        if eps <= 0.0:
+            raise ValueError("eps must be positive")
+        if gate_temperature <= 0.0:
+            raise ValueError("gate_temperature must be positive")
+        self.mode = mode
+        self.eps = float(eps)
+        self.register_buffer("gate_temperature", torch.tensor(float(gate_temperature), dtype=FP32_DTYPE))
+
+    def forward(
+        self,
+        state: torch.Tensor,
+        candidate: torch.Tensor,
+        new_energy: torch.Tensor,
+        old_confidence: torch.Tensor | None = None,
+        update_strength: torch.Tensor | None = None,
+        mode: str | None = None,
+    ) -> Dict[str, torch.Tensor]:
+        if state.shape != candidate.shape:
+            raise ValueError("state and candidate must have the same shape")
+        effective_mode = self.mode if mode is None else mode
+        if effective_mode not in {"precision", "sigmoid"}:
+            raise ValueError("mode must be 'precision' or 'sigmoid'")
+
+        state_dtype = state.dtype
+        new_energy_fp32 = _to_fp32(new_energy)
+        if old_confidence is None:
+            old_confidence_fp32 = torch.zeros_like(new_energy_fp32)
+        else:
+            old_confidence_fp32 = _to_fp32(old_confidence)
+
+        if effective_mode == "precision":
+            new_precision_fp32 = F.softplus(new_energy_fp32) + self.eps
+            old_precision_fp32 = F.softplus(old_confidence_fp32) + self.eps
+            update_gate_fp32 = new_precision_fp32 / (new_precision_fp32 + old_precision_fp32).clamp_min(self.eps)
+        else:
+            temperature_fp32 = self.gate_temperature.to(device=state.device, dtype=FP32_DTYPE).clamp_min(self.eps)
+            new_precision_fp32 = F.softplus(new_energy_fp32) + self.eps
+            old_precision_fp32 = F.softplus(old_confidence_fp32) + self.eps
+            update_gate_fp32 = torch.sigmoid(new_energy_fp32 / temperature_fp32)
+
+        if update_strength is not None:
+            update_strength_fp32 = _to_fp32(update_strength)
+            while update_strength_fp32.ndim < update_gate_fp32.ndim:
+                update_strength_fp32 = update_strength_fp32.unsqueeze(-1)
+            update_gate_fp32 = update_gate_fp32 * update_strength_fp32
+
+        while update_gate_fp32.ndim < state.ndim:
+            update_gate_fp32 = update_gate_fp32.unsqueeze(-1)
+        update_gate_fp32 = update_gate_fp32.clamp(0.0, 1.0)
+        updated_fp32 = _to_fp32(state) + update_gate_fp32 * (_to_fp32(candidate) - _to_fp32(state))
+        updated = updated_fp32.to(dtype=state_dtype)
+        return {
+            "state": updated,
+            "updated": updated,
+            "updated_state": updated,
+            "update_gate": update_gate_fp32.to(dtype=state_dtype),
+            "update_gate_fp32": update_gate_fp32,
+            "new_precision": new_precision_fp32.to(dtype=state_dtype),
+            "old_precision": old_precision_fp32.to(dtype=state_dtype),
+            "new_precision_fp32": new_precision_fp32,
+            "old_precision_fp32": old_precision_fp32,
+        }
+
+
 class EMLBank(nn.Module):
     """Project features into a bank of sEML units and mix them back out."""
 
@@ -475,6 +665,8 @@ __all__ = [
     "EMLBank",
     "EMLGate",
     "EMLMessageGate",
+    "EMLPrecisionUpdate",
+    "EMLResponsibility",
     "EMLScore",
     "EMLUnit",
     "EMLUpdateGate",

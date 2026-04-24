@@ -6,7 +6,7 @@ from typing import Any, Dict
 import torch
 import torch.nn as nn
 
-from .primitives import EMLGate, EMLMessageGate, EMLUpdateGate, _reset_linear
+from .primitives import EMLGate, EMLMessageGate, EMLPrecisionUpdate, EMLResponsibility, EMLUpdateGate, _reset_linear
 
 
 def _normalize_slot_layout(slot_layout: Mapping[str, int] | Sequence[str]) -> dict[str, int]:
@@ -246,6 +246,9 @@ class EMLMessagePassing(nn.Module):
         clip_value: float = 3.0,
         gate_bias: float = -0.5,
         gate_eps: float = 1.0e-6,
+        responsibility_mode: bool = True,
+        responsibility_temperature: float = 1.0,
+        responsibility_use_null: bool = True,
     ) -> None:
         super().__init__()
         if slot_dim <= 0 or event_dim <= 0 or hidden_dim <= 0:
@@ -256,6 +259,7 @@ class EMLMessagePassing(nn.Module):
         self.slot_dim = slot_dim
         self.event_dim = event_dim
         self.gate_eps = float(gate_eps)
+        self.responsibility_mode = bool(responsibility_mode)
 
         self.event_proj = nn.Linear(event_dim, slot_dim)
         self.source_proj = nn.Linear(slot_dim, slot_dim)
@@ -265,6 +269,11 @@ class EMLMessagePassing(nn.Module):
         self.drive_net = _MLP(slot_dim * 6, hidden_dim, 1)
         self.resistance_net = _MLP(slot_dim * 6, hidden_dim, 1)
         self.gate = EMLMessageGate(dim=1, clip_value=clip_value, init_bias=gate_bias)
+        self.responsibility = EMLResponsibility(
+            temperature=responsibility_temperature,
+            use_null=responsibility_use_null,
+            null_logit=0.0,
+        )
         _reset_linear(self.event_proj)
         _reset_linear(self.source_proj)
         _reset_linear(self.target_proj)
@@ -313,13 +322,33 @@ class EMLMessagePassing(nn.Module):
         drive = self.drive_net(joint)
         resistance = self.resistance_net(joint)
         gate_out = self.gate(drive, resistance, warmup_eta=warmup_eta)
-        gate = gate_out["gate"].squeeze(-1)
-        gate = gate.masked_fill(~edge_mask, 0.0)
-
         values = self.value_proj(active_slot_states)
-        messages = gate.unsqueeze(-1) * values.unsqueeze(1)
-        gate_mass = gate.sum(dim=2, keepdim=True).clamp_min(self.gate_eps)
-        aggregated_messages = messages.sum(dim=2) / gate_mass
+        edge_energy = gate_out["energy"].squeeze(-1)
+        raw_gate = gate_out["gate"].squeeze(-1).masked_fill(~edge_mask, 0.0)
+
+        if self.responsibility_mode:
+            responsibility_out = self.responsibility(edge_energy, mask=edge_mask)
+            weights = responsibility_out["neighbor_weights"]
+            messages = weights.unsqueeze(-1) * values.unsqueeze(1)
+            aggregated_messages = messages.sum(dim=2)
+            update_strength = responsibility_out["update_strength"]
+            aggregated_messages = aggregated_messages * update_strength.unsqueeze(-1)
+            gate = weights
+            gate_mass = responsibility_out["weight_mass"].unsqueeze(-1).clamp_min(self.gate_eps)
+            null_weight = responsibility_out["null_weight"]
+            responsibility_entropy = responsibility_out["entropy"]
+            max_weight = responsibility_out["max_weight"]
+            responsibility_logits = responsibility_out["logits"]
+        else:
+            gate = raw_gate
+            messages = gate.unsqueeze(-1) * values.unsqueeze(1)
+            gate_mass = gate.sum(dim=2, keepdim=True).clamp_min(self.gate_eps)
+            aggregated_messages = messages.sum(dim=2) / gate_mass
+            update_strength = gate_mass.squeeze(-1).clamp(0.0, 1.0)
+            null_weight = None
+            responsibility_entropy = -(gate.clamp_min(self.gate_eps) * gate.clamp_min(self.gate_eps).log()).sum(dim=-1)
+            max_weight = gate.max(dim=-1).values
+            responsibility_logits = edge_energy
 
         target_indices = active_indices.unsqueeze(2).expand(-1, -1, active_slots)
         source_indices = active_indices.unsqueeze(1).expand(-1, active_slots, -1)
@@ -329,7 +358,17 @@ class EMLMessagePassing(nn.Module):
             "resistance": gate_out["resistance"].squeeze(-1),
             "energy": gate_out["energy"].squeeze(-1),
             "gate": gate,
+            "raw_gate": raw_gate,
             "gate_mass": gate_mass,
+            "weight_mass": gate_mass,
+            "neighbor_weights": gate,
+            "null_weight": null_weight,
+            "update_strength": update_strength,
+            "responsibility_entropy": responsibility_entropy,
+            "max_weight": max_weight,
+            "max_responsibility": max_weight,
+            "responsibility_logits": responsibility_logits,
+            "message_norm": aggregated_messages.norm(dim=-1),
             "edge_mask": edge_mask,
             "messages": messages,
             "aggregated_messages": aggregated_messages,
@@ -350,14 +389,18 @@ class EMLStateUpdateCell(nn.Module):
         message_dim: int | None = None,
         clip_value: float = 3.0,
         gate_bias: float = -1.0,
+        update_mode: str = "sigmoid",
     ) -> None:
         super().__init__()
         if slot_dim <= 0 or event_dim <= 0 or hidden_dim <= 0:
             raise ValueError("slot_dim, event_dim, and hidden_dim must be positive")
+        if update_mode not in {"sigmoid", "precision"}:
+            raise ValueError("update_mode must be 'sigmoid' or 'precision'")
 
         self.slot_dim = slot_dim
         self.event_dim = event_dim
         self.message_dim = message_dim or slot_dim
+        self.update_mode = update_mode
         input_dim = slot_dim + self.message_dim + event_dim
 
         self.norm = nn.LayerNorm(input_dim)
@@ -365,6 +408,8 @@ class EMLStateUpdateCell(nn.Module):
         self.drive_net = _MLP(input_dim, hidden_dim, slot_dim)
         self.resistance_net = _MLP(input_dim, hidden_dim, slot_dim)
         self.update_gate = EMLUpdateGate(dim=slot_dim, clip_value=clip_value, init_bias=gate_bias)
+        self.old_confidence_net = _MLP(slot_dim, hidden_dim, slot_dim)
+        self.precision_update = EMLPrecisionUpdate(mode="precision")
         self.out_norm = nn.LayerNorm(slot_dim)
 
     def forward(
@@ -374,7 +419,7 @@ class EMLStateUpdateCell(nn.Module):
         event: torch.Tensor,
         warmup_eta: float | torch.Tensor = 1.0,
         update_gate_scale: torch.Tensor | None = None,
-    ) -> Dict[str, torch.Tensor]:
+    ) -> Dict[str, Any]:
         if slot_states.ndim != 3 or message.ndim != 3:
             raise ValueError("slot_states and message must have shape [batch, slots, dim]")
         if event.ndim != 2:
@@ -393,22 +438,53 @@ class EMLStateUpdateCell(nn.Module):
         resistance = self.resistance_net(joint)
         gate_out = self.update_gate(drive, resistance, warmup_eta=warmup_eta)
         update_gate = gate_out["gate"]
-        if update_gate_scale is not None:
-            if update_gate_scale.ndim == 2:
-                update_gate_scale = update_gate_scale.unsqueeze(-1)
-            if update_gate_scale.shape != update_gate.shape[:2] + (1,):
+        normalized_update_scale = update_gate_scale
+        if normalized_update_scale is not None:
+            if normalized_update_scale.ndim == 2:
+                normalized_update_scale = normalized_update_scale.unsqueeze(-1)
+            if normalized_update_scale.shape != update_gate.shape[:2] + (1,):
                 raise ValueError("update_gate_scale must have shape [batch, slots] or [batch, slots, 1]")
-            update_gate = update_gate * update_gate_scale.to(device=update_gate.device, dtype=update_gate.dtype)
-        updated_slot_states = self.out_norm(slot_states + update_gate * (candidate - slot_states))
+            normalized_update_scale = normalized_update_scale.to(device=update_gate.device, dtype=update_gate.dtype)
 
-        return {
+        precision_out = None
+        if self.update_mode == "precision":
+            old_confidence = self.old_confidence_net(slot_states)
+            precision_out = self.precision_update(
+                state=slot_states,
+                candidate=candidate,
+                new_energy=gate_out["energy"],
+                old_confidence=old_confidence,
+                update_strength=normalized_update_scale,
+            )
+            update_gate = precision_out["update_gate"]
+            raw_updated = precision_out["updated_state"]
+        else:
+            if normalized_update_scale is not None:
+                update_gate = update_gate * normalized_update_scale
+            raw_updated = slot_states + update_gate * (candidate - slot_states)
+
+        updated_slot_states = self.out_norm(raw_updated)
+
+        output: Dict[str, Any] = {
             "slot_states": updated_slot_states,
             "candidate": candidate,
             "drive": gate_out["drive"],
             "resistance": gate_out["resistance"],
             "energy": gate_out["energy"],
             "update_gate": update_gate,
+            "update_mode": self.update_mode,
         }
+        if precision_out is not None:
+            output.update(
+                {
+                    "new_precision": precision_out["new_precision"],
+                    "old_precision": precision_out["old_precision"],
+                    "new_precision_fp32": precision_out["new_precision_fp32"],
+                    "old_precision_fp32": precision_out["old_precision_fp32"],
+                    "updated_state": precision_out["updated_state"],
+                }
+            )
+        return output
 
 
 class EMLUpdateCell(EMLStateUpdateCell):
@@ -430,6 +506,7 @@ class EMLSlotGraphLayer(nn.Module):
         update_bias: float = -1.0,
         modulate_messages_by_route: bool = True,
         modulate_updates_by_route: bool = False,
+        update_mode: str = "sigmoid",
     ) -> None:
         super().__init__()
         self.modulate_messages_by_route = modulate_messages_by_route
@@ -456,6 +533,7 @@ class EMLSlotGraphLayer(nn.Module):
             message_dim=slot_dim,
             clip_value=clip_value,
             gate_bias=update_bias,
+            update_mode=update_mode,
         )
 
     def forward(
@@ -510,6 +588,8 @@ class EMLSlotGraphLayer(nn.Module):
             warmup_eta=warmup_eta,
             update_gate_scale=active_route_strength if self.modulate_updates_by_route else None,
         )
+        update_norm_before = (update_out["candidate"] - active_slot_states).norm(dim=-1)
+        update_norm_after = (update_out["slot_states"] - active_slot_states).norm(dim=-1)
 
         updated_slot_states = _scatter_along_slots(slot_states, active_indices, update_out["slot_states"])
         updated_typed_states = updated_slot_states + type_features
@@ -521,6 +601,8 @@ class EMLSlotGraphLayer(nn.Module):
             "active_indices": active_indices,
             "active_mask": router_out["active_mask"],
             "active_route_strength": active_route_strength,
+            "update_norm_before": update_norm_before,
+            "update_norm_after": update_norm_after,
             "active_slot_states_before": active_slot_states,
             "active_slot_states_after": update_out["slot_states"],
             "router": router_out,

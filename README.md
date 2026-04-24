@@ -21,6 +21,18 @@ EMLSensor
 -> EMLFieldReadout
 ```
 
+This branch also explores EML as the representation mechanism itself:
+
+```text
+local evidence
+-> support/conflict decomposition
+-> EML responsibility propagation
+-> precision update
+-> composition
+-> attractor memory
+-> representation readout
+```
+
 Image field encoder and text field encoder are now the primary validation paths. Old MNIST, CNN, and PureEML models remain compatibility baselines. Prototype and novelty behavior remains auxiliary only.
 
 ## Core Primitive
@@ -82,10 +94,28 @@ text ids
 
 The foundation core can inject field attractor states into typed slots instead of reducing field outputs to one event too early.
 
+## Efficient Representation Path
+
+The efficient representation path avoids global pairwise token work:
+- images use local 2D windows
+- text uses causal local windows
+- attractor work is bounded by a small fixed attractor count
+- responsibility weights include an optional null route for weak evidence
+- precision updates balance old confidence against new evidence
+
+New validation models:
+- `EfficientEMLImageEncoder`
+- `EfficientEMLImageClassifier`
+- `EfficientEMLTextEncoder`
+- `EfficientEMLTextGenerationHead`
+
 ## Repository Layout
 
 Core modules:
 - [eml_mnist/primitives.py](./eml_mnist/primitives.py): stable sEML primitives
+- [eml_mnist/representation.py](./eml_mnist/representation.py): efficient local EML representation modules
+- [eml_mnist/eml_repr_image.py](./eml_mnist/eml_repr_image.py): efficient image representation encoder/classifier
+- [eml_mnist/eml_repr_text.py](./eml_mnist/eml_repr_text.py): efficient causal text representation encoder/generation head
 - [eml_mnist/field.py](./eml_mnist/field.py): EML energy-field modules
 - [eml_mnist/eml_image_field.py](./eml_mnist/eml_image_field.py): image field encoder/classifier
 - [eml_mnist/eml_text_field.py](./eml_mnist/eml_text_field.py): text field encoder/generation head
@@ -118,6 +148,14 @@ python scripts/train_eml_text_field.py --steps 50 --device cpu
 python scripts/train_eml_field_foundation.py --steps 50 --device cpu
 ```
 
+Efficient representation smoke runs:
+
+```bash
+python scripts/train_efficient_eml_image_repr.py --steps 50 --device cpu
+python scripts/train_efficient_eml_text_repr.py --steps 50 --device cpu
+python scripts/train_efficient_eml_foundation_repr.py --steps 50 --device cpu
+```
+
 Compatibility smoke runs:
 
 ```bash
@@ -138,6 +176,9 @@ Training scripts and the foundation core expose:
 - drive / resistance / energy statistics
 - local activation rate
 - support and conflict means
+- null route weight
+- responsibility entropy
+- precision update strength
 - graph gate mass
 - active route strength
 - attractor activation and injection norm
