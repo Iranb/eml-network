@@ -1,0 +1,45 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments and local env files
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# Build and packaging output
+build/
+dist/
+*.egg-info/
+
+# Local datasets and downloaded archives
+data/
+dataset/
+datasets/
+*.tar
+*.tar.gz
+*.zip
+
+# Training outputs, checkpoints, and generated artifacts
+outputs/
+artifacts/
+remote_runs/
+*.pt
+*.pth
+*.ckpt
+
+# Logs and temporary files
+*.log
+tmp/
+temp/
+
+# OS/editor metadata
+.DS_Store
+.idea/
+.vscode/
