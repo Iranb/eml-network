@@ -32,10 +32,17 @@ HEADS = [
     "eml_centered_ambiguity",
 ]
 
+MERC_HEADS = [
+    "merc_linear",
+    "merc_energy",
+    "merc_linear_small",
+    "merc_energy_small",
+]
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run frozen-feature CNN head ablations")
-    parser.add_argument("--dataset", choices=["synthetic_shape", "cifar10"], default="synthetic_shape")
+    parser.add_argument("--dataset", choices=["synthetic_shape", "synthetic_evidence", "cifar10"], default="synthetic_shape")
     parser.add_argument("--mode", choices=["smoke", "medium", "full"], default="smoke")
     parser.add_argument("--seeds", nargs="+", type=int, default=[0, 1])
     parser.add_argument("--device", default="cpu")
@@ -51,6 +58,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--allow-download", action="store_true")
     parser.add_argument("--force-features", action="store_true")
+    parser.add_argument("--include-merc", action="store_true")
+    parser.add_argument("--early-stop-patience", type=int, default=0)
+    parser.add_argument("--early-stop-min-evals", type=int, default=1)
     return parser
 
 
@@ -107,17 +117,20 @@ def run(args: argparse.Namespace) -> None:
     if args.num_workers > 0:
         torch.multiprocessing.set_sharing_strategy("file_system")
     train_size, val_size, test_size, head_steps, feature_steps = _defaults(args)
+    heads = list(HEADS)
+    if args.include_merc:
+        heads.extend(MERC_HEADS)
     for seed in args.seeds:
         try:
             feature_dir = extract_features(_feature_args(args, seed, train_size, val_size, test_size, feature_steps))
         except Exception as exc:
             reason = repr(exc)
             trace = traceback.format_exc()
-            for head_name in HEADS:
+            for head_name in heads:
                 _not_run(seed, head_name, args, reason)
             print(trace)
             continue
-        for head_name in HEADS:
+        for head_name in heads:
             try:
                 run_id = f"frozen_{args.dataset}_{head_name}_seed{seed}"
                 train_head(
@@ -137,6 +150,8 @@ def run(args: argparse.Namespace) -> None:
                         pairwise_weight=0.0,
                         pairwise_margin=0.0,
                         eval_interval=max(1, head_steps // 3),
+                        early_stop_patience=args.early_stop_patience,
+                        early_stop_min_evals=args.early_stop_min_evals,
                     )
                 )
             except Exception as exc:

@@ -39,6 +39,10 @@ def build_parser() -> argparse.ArgumentParser:
         "eml_no_ambiguity",
         "eml_raw_ambiguity",
         "eml_centered_ambiguity",
+        "merc_linear",
+        "merc_energy",
+        "merc_linear_small",
+        "merc_energy_small",
     ], required=True)
     parser.add_argument("--runs-root", default="reports/head_ablation/runs")
     parser.add_argument("--run-id", default="")
@@ -53,6 +57,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--pairwise-weight", type=float, default=0.0)
     parser.add_argument("--pairwise-margin", type=float, default=0.0)
     parser.add_argument("--eval-interval", type=int, default=10)
+    parser.add_argument("--early-stop-patience", type=int, default=0)
+    parser.add_argument("--early-stop-min-evals", type=int, default=1)
     return parser
 
 
@@ -81,6 +87,8 @@ def _load_split(features_dir: Path, split: str, device: torch.device) -> Dict[st
         "labels": _load_tensor(features_dir / f"labels_{split}.pt", device=device).long(),
         "noise_level": _optional_tensor(features_dir / f"noise_level_{split}.pt", device=device),
         "occlusion_level": _optional_tensor(features_dir / f"occlusion_level_{split}.pt", device=device),
+        "resistance_target": _optional_tensor(features_dir / f"resistance_target_{split}.pt", device=device),
+        "evidence_target": _optional_tensor(features_dir / f"evidence_target_{split}.pt", device=device),
     }
 
 
@@ -124,7 +132,16 @@ def evaluate_head(
     metric_values: Dict[str, list[torch.Tensor]] = {}
     for start in range(0, features.size(0), batch_size):
         end = min(features.size(0), start + batch_size)
-        out = head(features[start:end], labels=labels[start:end], warmup_eta=warmup_eta)
+        resistance_target = split.get("resistance_target")
+        if torch.is_tensor(resistance_target):
+            out = head(
+                features[start:end],
+                labels=labels[start:end],
+                warmup_eta=warmup_eta,
+                resistance_target=resistance_target[start:end],
+            )
+        else:
+            out = head(features[start:end], labels=labels[start:end], warmup_eta=warmup_eta)
         logits_parts.append(out["logits"].detach())
         for key in (
             "positive_logit",
@@ -142,6 +159,14 @@ def evaluate_head(
             value = out.get(key)
             if torch.is_tensor(value):
                 metric_values.setdefault(key, []).append(value.detach().reshape(value.size(0), -1).mean(dim=-1))
+        for key in ("update_gate", "precision"):
+            value = out.get(key)
+            if torch.is_tensor(value):
+                metric_values.setdefault(key, []).append(value.detach().reshape(value.size(0), -1).mean(dim=-1))
+        for key in ("support_factors", "conflict_factors"):
+            value = out.get(key)
+            if torch.is_tensor(value):
+                metric_values.setdefault(key, []).append(value.detach().reshape(value.size(0), -1))
     logits = torch.cat(logits_parts, dim=0)
     predictions = logits.argmax(dim=-1)
     metrics: Dict[str, Any] = {
@@ -167,6 +192,20 @@ def evaluate_head(
             metrics["resistance_noise_corr"] = pearson_corr(positive_resistance.to(noise.device), noise)
         if torch.is_tensor(occlusion):
             metrics["resistance_occlusion_corr"] = pearson_corr(positive_resistance.to(occlusion.device), occlusion)
+    evidence_target = split.get("evidence_target")
+    support_factors = metrics.get("support_factors")
+    if torch.is_tensor(evidence_target) and torch.is_tensor(support_factors):
+        metrics["support_evidence_corr"] = pearson_corr(
+            support_factors.float().mean(dim=-1).to(evidence_target.device),
+            evidence_target.float(),
+        )
+    conflict_factors = metrics.get("conflict_factors")
+    resistance_target = split.get("resistance_target")
+    if torch.is_tensor(resistance_target) and torch.is_tensor(conflict_factors):
+        metrics["conflict_resistance_corr"] = pearson_corr(
+            conflict_factors.float().mean(dim=-1).to(resistance_target.device),
+            resistance_target.float(),
+        )
     return metrics
 
 
@@ -187,8 +226,12 @@ def _summary_from_eval(prefix: str, metrics: Dict[str, Any]) -> Dict[str, Any]:
         f"{prefix}_sample_uncertainty_mean": metrics.get("sample_uncertainty_mean", float("nan")),
         f"{prefix}_ambiguity_mean": metrics.get("ambiguity_mean", float("nan")),
         f"{prefix}_class_resistance_mean": metrics.get("class_resistance_mean", float("nan")),
+        f"{prefix}_update_gate_mean": metrics.get("update_gate_mean", float("nan")),
+        f"{prefix}_precision_mean": metrics.get("precision_mean", float("nan")),
         f"{prefix}_resistance_noise_corr": metrics.get("resistance_noise_corr", float("nan")),
         f"{prefix}_resistance_occlusion_corr": metrics.get("resistance_occlusion_corr", float("nan")),
+        f"{prefix}_support_evidence_corr": metrics.get("support_evidence_corr", float("nan")),
+        f"{prefix}_conflict_resistance_corr": metrics.get("conflict_resistance_corr", float("nan")),
     }
 
 
@@ -238,6 +281,9 @@ def train_head(args: argparse.Namespace | SimpleNamespace) -> Dict[str, Any]:
     optimizer = AdamW(head.parameters(), lr=args.lr)
     best_val_acc = 0.0
     best_step = 0
+    eval_count = 0
+    stale_evals = 0
+    early_stop_triggered = False
     start_time = time.time()
     last_metrics: Dict[str, Any] = {}
 
@@ -247,7 +293,15 @@ def train_head(args: argparse.Namespace | SimpleNamespace) -> Dict[str, Any]:
         batch_features = features[index]
         batch_labels = labels[index]
         warmup_eta = min(1.0, step / max(1, args.steps // 2))
-        outputs = head(batch_features, labels=batch_labels, warmup_eta=warmup_eta)
+        batch_resistance_target = train.get("resistance_target")
+        if torch.is_tensor(batch_resistance_target):
+            batch_resistance_target = batch_resistance_target[index]
+        outputs = head(
+            batch_features,
+            labels=batch_labels,
+            warmup_eta=warmup_eta,
+            resistance_target=batch_resistance_target,
+        )
         loss, pairwise = _loss_for_outputs(head, outputs, batch_labels, args.pairwise_weight, args.pairwise_margin)
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
@@ -265,11 +319,22 @@ def train_head(args: argparse.Namespace | SimpleNamespace) -> Dict[str, Any]:
         if step % max(1, args.eval_interval) == 0 or step == args.steps:
             val_metrics = evaluate_head(head, val, warmup_eta=warmup_eta)
             metrics.update(_summary_from_eval("val", val_metrics))
+            eval_count += 1
             if val_metrics["accuracy"] > best_val_acc:
                 best_val_acc = float(val_metrics["accuracy"])
                 best_step = step
+                stale_evals = 0
+            else:
+                stale_evals += 1
         logger.log_step(metrics, diagnostics)
         last_metrics = metrics
+        if (
+            args.early_stop_patience > 0
+            and eval_count >= args.early_stop_min_evals
+            and stale_evals >= args.early_stop_patience
+        ):
+            early_stop_triggered = True
+            break
 
     val_metrics = evaluate_head(head, val)
     test_metrics = evaluate_head(head, test)
@@ -298,6 +363,8 @@ def train_head(args: argparse.Namespace | SimpleNamespace) -> Dict[str, Any]:
         "best_val_accuracy": best_val_acc,
         "best_step": best_step,
         "final_metric": test_metrics["accuracy"],
+        "steps_run": step,
+        "early_stop_triggered": early_stop_triggered,
         "final_train_loss": last_metrics.get("train_loss", float("nan")),
         "final_train_accuracy": last_metrics.get("train_accuracy", float("nan")),
         "total_train_time_sec": total_time,

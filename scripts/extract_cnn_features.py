@@ -18,14 +18,14 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from eml_mnist.experiment_utils import safe_torchvision_available, write_json
-from eml_mnist.image_datasets import SyntheticShapeEnergyDataset
+from eml_mnist.image_datasets import SyntheticShapeEnergyDataset, SyntheticShapeEvidenceDataset
 from eml_mnist.model import ConvBackbone
 from eml_mnist.training import OptionalDatasetDependencyError, set_seed
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Extract frozen CNN features for head ablations")
-    parser.add_argument("--dataset", choices=["synthetic_shape", "cifar10"], default="synthetic_shape")
+    parser.add_argument("--dataset", choices=["synthetic_shape", "synthetic_evidence", "cifar10"], default="synthetic_shape")
     parser.add_argument("--output-dir", default="reports/head_ablation/features/synthetic_shape_seed0")
     parser.add_argument("--data-dir", default="~/dataset")
     parser.add_argument("--device", default="cpu")
@@ -98,6 +98,13 @@ def _build_synthetic(args: argparse.Namespace | SimpleNamespace) -> tuple[Datase
     return train, val, test, 3, train.num_classes
 
 
+def _build_synthetic_evidence(args: argparse.Namespace | SimpleNamespace) -> tuple[Dataset, Dataset, Dataset, int, int]:
+    train = SyntheticShapeEvidenceDataset(size=args.train_size, image_size=args.image_size, seed=args.seed)
+    val = SyntheticShapeEvidenceDataset(size=args.val_size, image_size=args.image_size, seed=args.seed + 100_000)
+    test = SyntheticShapeEvidenceDataset(size=args.test_size, image_size=args.image_size, seed=args.seed + 200_000)
+    return train, val, test, 3, 2
+
+
 def _build_cifar(args: argparse.Namespace | SimpleNamespace) -> tuple[Dataset, Dataset, Dataset, int, int]:
     ok, _version = safe_torchvision_available()
     if not ok:
@@ -128,6 +135,8 @@ def _build_cifar(args: argparse.Namespace | SimpleNamespace) -> tuple[Dataset, D
 def _build_datasets(args: argparse.Namespace | SimpleNamespace) -> tuple[Dataset, Dataset, Dataset, int, int]:
     if args.dataset == "synthetic_shape":
         return _build_synthetic(args)
+    if args.dataset == "synthetic_evidence":
+        return _build_synthetic_evidence(args)
     if args.dataset == "cifar10":
         return _build_cifar(args)
     raise ValueError(f"unsupported dataset: {args.dataset}")
@@ -180,21 +189,33 @@ def _extract_split(backbone: ConvBackbone, loader: DataLoader, device: torch.dev
     labels: list[torch.Tensor] = []
     noise: list[torch.Tensor] = []
     occlusion: list[torch.Tensor] = []
+    resistance_target: list[torch.Tensor] = []
+    evidence_target: list[torch.Tensor] = []
     for batch in loader:
         image, label = _batch_to_image_label(batch, device)
         features.append(backbone(image).detach().cpu())
         labels.append(label.detach().cpu())
         noise_value = _metadata_tensor(batch, "noise_level", image.size(0))
         occlusion_value = _metadata_tensor(batch, "occlusion_level", image.size(0))
+        resistance_value = _metadata_tensor(batch, "resistance_target", image.size(0))
+        evidence_value = _metadata_tensor(batch, "evidence_target", image.size(0))
         if noise_value is not None:
             noise.append(noise_value)
         if occlusion_value is not None:
             occlusion.append(occlusion_value)
+        if resistance_value is not None:
+            resistance_target.append(resistance_value)
+        if evidence_value is not None:
+            evidence_target.append(evidence_value)
     result = {"features": torch.cat(features, dim=0), "labels": torch.cat(labels, dim=0)}
     if noise:
         result["noise_level"] = torch.cat(noise, dim=0)
     if occlusion:
         result["occlusion_level"] = torch.cat(occlusion, dim=0)
+    if resistance_target:
+        result["resistance_target"] = torch.cat(resistance_target, dim=0)
+    if evidence_target:
+        result["evidence_target"] = torch.cat(evidence_target, dim=0)
     return result
 
 
@@ -235,6 +256,10 @@ def extract_features(args: argparse.Namespace | SimpleNamespace) -> Path:
             torch.save(split["noise_level"], output_dir / f"noise_level_{split_name}.pt")
         if "occlusion_level" in split:
             torch.save(split["occlusion_level"], output_dir / f"occlusion_level_{split_name}.pt")
+        if "resistance_target" in split:
+            torch.save(split["resistance_target"], output_dir / f"resistance_target_{split_name}.pt")
+        if "evidence_target" in split:
+            torch.save(split["evidence_target"], output_dir / f"evidence_target_{split_name}.pt")
 
     torch.save(backbone.state_dict(), output_dir / "backbone.pt")
     metadata = {

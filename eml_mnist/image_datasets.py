@@ -404,10 +404,65 @@ class CIFARCorruptionDataset(Dataset):
         }
 
 
+class SyntheticShapeEvidenceDataset(SyntheticShapeEnergyDataset):
+    """Synthetic shape task with explicit support and conflict metadata."""
+
+    def __init__(
+        self,
+        size: int,
+        image_size: int = 32,
+        seed: int = 0,
+        target_color: str = "red",
+        target_shape: str = "triangle",
+    ) -> None:
+        super().__init__(
+            size=size,
+            image_size=image_size,
+            seed=seed,
+            target_type="combo",
+            include_background_clutter=True,
+            include_mask=True,
+        )
+        if target_color not in COLORS or target_shape not in SHAPES:
+            raise ValueError("target_color/target_shape must be valid synthetic shape attributes")
+        self.target_color = target_color
+        self.target_shape = target_shape
+
+    def __getitem__(self, index: int) -> Dict[str, torch.Tensor | int]:
+        payload = super().__getitem__(index)
+        shape_name = SHAPES[int(payload["shape_label"])]
+        color_name = self.color_names[int(payload["color_label"])]
+        combo_positive = int(shape_name == self.target_shape and color_name == self.target_color)
+        support_color = float(color_name == self.target_color)
+        support_shape = float(shape_name == self.target_shape)
+        support_texture = float(payload.get("mask", torch.tensor(0.0)).float().mean().item() > 0.03)
+        support_position = float(int(payload["label"]) == int(payload["combo_label"]))
+        conflict_noise = float(payload["noise_level"])
+        conflict_occ = float(payload["occlusion_level"])
+        conflict_clutter = float(payload["background_clutter"])
+        contradictory_feature = float((support_color + support_shape) == 1.0)
+        evidence_target = 0.35 * support_color + 0.35 * support_shape + 0.15 * support_texture + 0.15 * support_position
+        resistance_target = min(1.0, 0.4 * conflict_noise + 0.4 * conflict_occ + 0.1 * conflict_clutter + 0.1 * contradictory_feature)
+        payload.update(
+            {
+                "label": combo_positive,
+                "evidence_target": torch.tensor(evidence_target, dtype=torch.float32),
+                "resistance_target": torch.tensor(resistance_target, dtype=torch.float32),
+                "color_present": torch.tensor(support_color, dtype=torch.float32),
+                "shape_present": torch.tensor(support_shape, dtype=torch.float32),
+                "texture_present": torch.tensor(support_texture, dtype=torch.float32),
+                "position_condition": torch.tensor(support_position, dtype=torch.float32),
+                "contradictory_feature": torch.tensor(contradictory_feature, dtype=torch.float32),
+            }
+        )
+        return payload
+
+
 __all__ = [
     "CIFARCorruptionDataset",
     "COLORS",
     "SHAPES",
+    "SyntheticShapeEvidenceDataset",
     "SyntheticShapeDataset",
     "SyntheticShapeEnergyDataset",
     "TEXTURES",

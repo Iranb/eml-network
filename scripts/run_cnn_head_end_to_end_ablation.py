@@ -25,6 +25,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from eml_mnist.diagnostics import collect_eml_diagnostics
 from eml_mnist.experiment_utils import ExperimentLogger
 from eml_mnist.head_ablation import build_head, has_prototypes, pairwise_prototype_loss
+from eml_mnist.merc import MERCResidualBlock
 from eml_mnist.metrics import (
     brier_score,
     classification_accuracy,
@@ -47,10 +48,17 @@ MODEL_SPECS = [
     ("eml_bank_centered_ambiguity", "eml_centered_ambiguity", True),
 ]
 
+MERC_MODEL_SPECS = [
+    ("merc_linear", "merc_linear", False, False),
+    ("merc_energy", "merc_energy", False, False),
+    ("merc_block_linear", "merc_linear", False, True),
+    ("merc_block_energy", "merc_energy", False, True),
+]
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run end-to-end CNN plus head ablations")
-    parser.add_argument("--dataset", choices=["synthetic_shape", "cifar10"], default="synthetic_shape")
+    parser.add_argument("--dataset", choices=["synthetic_shape", "synthetic_evidence", "cifar10"], default="synthetic_shape")
     parser.add_argument("--mode", choices=["smoke", "medium", "full"], default="smoke")
     parser.add_argument("--seeds", nargs="+", type=int, default=[0, 1])
     parser.add_argument("--device", default="cpu")
@@ -65,6 +73,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--allow-download", action="store_true")
     parser.add_argument("--pairwise-weight", type=float, default=0.05)
     parser.add_argument("--pairwise-margin", type=float, default=0.0)
+    parser.add_argument("--include-merc", action="store_true")
+    parser.add_argument("--early-stop-patience", type=int, default=0)
+    parser.add_argument("--early-stop-min-evals", type=int, default=1)
     return parser
 
 
@@ -120,6 +131,7 @@ class CNNHeadModel(nn.Module):
         num_classes: int,
         head_name: str,
         use_bank: bool,
+        use_merc_block: bool = False,
     ) -> None:
         super().__init__()
         self.backbone = ConvBackbone(feature_dim=feature_dim, input_channels=input_channels)
@@ -132,6 +144,20 @@ class CNNHeadModel(nn.Module):
                 gate_bias=-1.0,
             )
             if use_bank
+            else None
+        )
+        self.merc_block = (
+            MERCResidualBlock(
+                input_dim=feature_dim,
+                hidden_dim=max(96, feature_dim * 2),
+                output_dim=feature_dim,
+                num_support_factors=4,
+                num_conflict_factors=4,
+                init_gamma=0.3,
+                old_confidence_init=4.0,
+                update_threshold=1.0,
+            )
+            if use_merc_block
             else None
         )
         self.head = build_head(
@@ -153,11 +179,17 @@ class CNNHeadModel(nn.Module):
         if self.bank is not None:
             block_stats = self.bank(features, warmup_eta=warmup_eta)
             features = block_stats["output"]
+        elif self.merc_block is not None:
+            block_stats = self.merc_block(features, warmup_eta=warmup_eta)
+            features = block_stats["output"]
         out = self.head(features, labels=labels, warmup_eta=warmup_eta)
         out["features"] = features
         if block_stats is not None:
             out["block_stats"] = [block_stats]
-            out["bank_gate_mean"] = block_stats["gate"].mean()
+            if "gate" in block_stats and torch.is_tensor(block_stats["gate"]):
+                out["bank_gate_mean"] = block_stats["gate"].mean()
+            elif "update_gate" in block_stats and torch.is_tensor(block_stats["update_gate"]):
+                out["bank_gate_mean"] = block_stats["update_gate"].mean()
         return out
 
 
@@ -280,6 +312,7 @@ def _run_one(
     model_name: str,
     head_name: str,
     use_bank: bool,
+    use_merc_block: bool,
     loss_mode: str,
     input_channels: int,
     num_classes: int,
@@ -290,7 +323,7 @@ def _run_one(
     device: torch.device,
 ) -> None:
     set_seed(seed)
-    model = CNNHeadModel(input_channels, args.feature_dim, num_classes, head_name, use_bank).to(device)
+    model = CNNHeadModel(input_channels, args.feature_dim, num_classes, head_name, use_bank, use_merc_block=use_merc_block).to(device)
     pairwise_weight = args.pairwise_weight if loss_mode == "ce_pairwise" else 0.0
     if loss_mode == "ce_pairwise" and not has_prototypes(model.head):
         _not_run(args, seed, model_name, loss_mode, "pairwise prototype margin is not applicable")
@@ -314,6 +347,7 @@ def _run_one(
             "pairwise_weight": pairwise_weight,
             "pairwise_margin": args.pairwise_margin,
             "use_eml_residual_bank": use_bank,
+            "use_merc_block": use_merc_block,
         },
         root=args.runs_root,
     )
@@ -322,6 +356,9 @@ def _run_one(
     iterator = _cycle(train_loader)
     best_val_acc = 0.0
     best_step = 0
+    eval_count = 0
+    stale_evals = 0
+    early_stop_triggered = False
     start = time.time()
     last_metrics: Dict[str, Any] = {}
     for step in range(1, steps + 1):
@@ -349,11 +386,22 @@ def _run_one(
         if step % max(1, steps // 3) == 0 or step == steps:
             val_metrics = evaluate_model(model, val_loader, device)
             metrics.update(_summary("val", val_metrics))
+            eval_count += 1
             if val_metrics["accuracy"] > best_val_acc:
                 best_val_acc = float(val_metrics["accuracy"])
                 best_step = step
+                stale_evals = 0
+            else:
+                stale_evals += 1
         logger.log_step(metrics, collect_eml_diagnostics(out))
         last_metrics = metrics
+        if (
+            args.early_stop_patience > 0
+            and eval_count >= args.early_stop_min_evals
+            and stale_evals >= args.early_stop_patience
+        ):
+            early_stop_triggered = True
+            break
     val_metrics = evaluate_model(model, val_loader, device)
     test_metrics = evaluate_model(model, test_loader, device)
     predictions_path = logger.run_dir / "eval_predictions.pt"
@@ -381,6 +429,8 @@ def _run_one(
         "best_val_accuracy": best_val_acc,
         "best_step": best_step,
         "final_metric": test_metrics["accuracy"],
+        "steps_run": step,
+        "early_stop_triggered": early_stop_triggered,
         "final_train_loss": last_metrics.get("train_loss", float("nan")),
         "final_train_accuracy": last_metrics.get("train_accuracy", float("nan")),
         "total_train_time_sec": total_time,
@@ -414,11 +464,17 @@ def run(args: argparse.Namespace) -> None:
         except Exception as exc:
             reason = repr(exc)
             print(traceback.format_exc())
-            for model_name, _head_name, _use_bank in MODEL_SPECS:
+            specs = [(m, h, b, False) for (m, h, b) in MODEL_SPECS]
+            if args.include_merc:
+                specs.extend(MERC_MODEL_SPECS)
+            for model_name, _head_name, _use_bank, _use_merc_block in specs:
                 for loss_mode in ("ce", "ce_pairwise"):
                     _not_run(args, seed, model_name, loss_mode, reason)
             continue
-        for model_name, head_name, use_bank in MODEL_SPECS:
+        specs = [(m, h, b, False) for (m, h, b) in MODEL_SPECS]
+        if args.include_merc:
+            specs.extend(MERC_MODEL_SPECS)
+        for model_name, head_name, use_bank, use_merc_block in specs:
             for loss_mode in ("ce", "ce_pairwise"):
                 try:
                     _run_one(
@@ -427,6 +483,7 @@ def run(args: argparse.Namespace) -> None:
                         model_name,
                         head_name,
                         use_bank,
+                        use_merc_block,
                         loss_mode,
                         input_channels,
                         num_classes,

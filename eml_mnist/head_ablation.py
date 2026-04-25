@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .merc import MERCHead
 from .primitives import EMLUnit, inverse_softplus
 
 
@@ -302,6 +303,44 @@ class EMLPrototypeHeadSupervisedResistance(EMLPrototypeHeadCenteredAmbiguity):
         self.resistance_supervision_scale = float(resistance_supervision_scale)
 
 
+class MERCHeadLinearReadout(MERCHead):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("head_mode", "linear_readout")
+        kwargs.setdefault("num_support_factors", 4)
+        kwargs.setdefault("num_conflict_factors", 4)
+        kwargs.setdefault("init_gamma", 0.3)
+        kwargs.setdefault("old_confidence_init", 4.0)
+        kwargs.setdefault("update_threshold", 1.0)
+        super().__init__(*args, **kwargs)
+
+
+class MERCHeadClassEnergy(MERCHead):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("head_mode", "eml_class_energy")
+        kwargs.setdefault("num_support_factors", 4)
+        kwargs.setdefault("num_conflict_factors", 4)
+        kwargs.setdefault("init_gamma", 0.3)
+        kwargs.setdefault("old_confidence_init", 4.0)
+        kwargs.setdefault("update_threshold", 1.0)
+        super().__init__(*args, **kwargs)
+
+
+class MERCHeadLinearReadoutSmall(MERCHeadLinearReadout):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("hidden_dim", 64)
+        kwargs.setdefault("num_support_factors", 2)
+        kwargs.setdefault("num_conflict_factors", 2)
+        super().__init__(*args, **kwargs)
+
+
+class MERCHeadClassEnergySmall(MERCHeadClassEnergy):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("hidden_dim", 64)
+        kwargs.setdefault("num_support_factors", 2)
+        kwargs.setdefault("num_conflict_factors", 2)
+        super().__init__(*args, **kwargs)
+
+
 HEADS = {
     "linear": LinearHead,
     "mlp": MLPHead,
@@ -310,6 +349,10 @@ HEADS = {
     "eml_raw_ambiguity": EMLPrototypeHeadRawAmbiguity,
     "eml_centered_ambiguity": EMLPrototypeHeadCenteredAmbiguity,
     "eml_supervised_resistance": EMLPrototypeHeadSupervisedResistance,
+    "merc_linear": MERCHeadLinearReadout,
+    "merc_energy": MERCHeadClassEnergy,
+    "merc_linear_small": MERCHeadLinearReadoutSmall,
+    "merc_energy_small": MERCHeadClassEnergySmall,
 }
 
 
@@ -329,6 +372,8 @@ def build_head(
         return cls(input_dim=input_dim, num_classes=num_classes, hidden_dim=hidden_dim)  # type: ignore[misc]
     if head_name == "cosine_prototype":
         return cls(input_dim=input_dim, num_classes=num_classes, temperature=temperature)  # type: ignore[misc]
+    if head_name.startswith("merc_"):
+        return cls(input_dim=input_dim, num_classes=num_classes, hidden_dim=hidden_dim or max(64, input_dim * 2), temperature=temperature)  # type: ignore[misc]
     return cls(input_dim=input_dim, num_classes=num_classes, hidden_dim=hidden_dim, temperature=temperature)  # type: ignore[misc]
 
 
@@ -354,6 +399,10 @@ __all__ = [
     "EMLPrototypeHeadRawAmbiguity",
     "EMLPrototypeHeadSupervisedResistance",
     "HEADS",
+    "MERCHeadClassEnergy",
+    "MERCHeadClassEnergySmall",
+    "MERCHeadLinearReadout",
+    "MERCHeadLinearReadoutSmall",
     "LinearHead",
     "MLPHead",
     "build_head",
