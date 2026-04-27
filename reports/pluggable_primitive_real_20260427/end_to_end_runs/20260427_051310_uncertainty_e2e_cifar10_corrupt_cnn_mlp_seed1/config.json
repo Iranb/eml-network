@@ -1,0 +1,8 @@
+{
+  "dataset_name": "cifar10_corrupt",
+  "device": "cuda",
+  "mode": "medium",
+  "model_name": "cnn_mlp",
+  "seed": 1,
+  "task_name": "end_to_end_uncertainty"
+}

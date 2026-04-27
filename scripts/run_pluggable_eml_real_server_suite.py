@@ -21,6 +21,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mode", choices=["smoke", "medium"], default="medium")
     parser.add_argument("--datasets", nargs="+", choices=["synthetic_shape_uncertainty", "cifar10_corrupt"], default=["synthetic_shape_uncertainty", "cifar10_corrupt"])
     parser.add_argument("--runs-root", default="reports/pluggable_uncertainty_real/runs")
+    parser.add_argument("--end-to-end-root", default="reports/pluggable_uncertainty_real/end_to_end_runs")
+    parser.add_argument("--plugin-root", default="reports/pluggable_uncertainty_real/responsibility_plugin_runs")
+    parser.add_argument("--agent-root", default="reports/pluggable_uncertainty_real/agent_risk_runs")
     parser.add_argument("--report", default="reports/EML_PLUGGABLE_PRIMITIVE_REPORT.md")
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--backbone-steps", type=int, default=300)
@@ -31,6 +34,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--early-stop-min-evals", type=int, default=2)
     parser.add_argument("--heads", nargs="+", default=None)
     parser.add_argument("--skip-cifar", action="store_true")
+    parser.add_argument("--skip-end-to-end", action="store_true")
+    parser.add_argument("--skip-plugin", action="store_true")
+    parser.add_argument("--skip-agent-risk", action="store_true")
+    parser.add_argument("--end-to-end-models", nargs="+", default=None)
+    parser.add_argument("--plugin-modules", nargs="+", default=None)
+    parser.add_argument("--agent-models", nargs="+", default=None)
     return parser
 
 
@@ -118,6 +127,92 @@ def _run_frozen(args: argparse.Namespace, dataset: str, seeds: list[int], heads:
     _run(command)
 
 
+def _run_end_to_end(args: argparse.Namespace, dataset: str) -> None:
+    command = [
+        sys.executable,
+        "scripts/run_uncertainty_end_to_end_benchmark.py",
+        "--dataset",
+        dataset,
+        "--mode",
+        args.mode,
+        "--device",
+        args.device,
+        "--data-dir",
+        args.data_dir,
+        "--num-workers",
+        str(args.num_workers),
+        "--batch-size",
+        str(args.batch_size),
+        "--runs-root",
+        args.end_to_end_root,
+        "--eval-interval",
+        str(args.eval_interval),
+        "--early-stop-patience",
+        str(args.early_stop_patience),
+        "--early-stop-min-evals",
+        str(args.early_stop_min_evals),
+        "--seeds",
+        *[str(seed) for seed in args.seeds],
+    ]
+    if args.end_to_end_models:
+        command.extend(["--models", *args.end_to_end_models])
+    _run(command)
+
+
+def _run_plugin(args: argparse.Namespace) -> None:
+    command = [
+        sys.executable,
+        "scripts/run_responsibility_plugin_benchmark.py",
+        "--mode",
+        args.mode,
+        "--device",
+        args.device,
+        "--num-workers",
+        str(args.num_workers),
+        "--batch-size",
+        str(args.batch_size),
+        "--runs-root",
+        args.plugin_root,
+        "--eval-interval",
+        str(args.eval_interval),
+        "--early-stop-patience",
+        str(args.early_stop_patience),
+        "--early-stop-min-evals",
+        str(args.early_stop_min_evals),
+        "--seeds",
+        *[str(seed) for seed in args.seeds],
+    ]
+    if args.plugin_modules:
+        command.extend(["--modules", *args.plugin_modules])
+    _run(command)
+
+
+def _run_agent_risk(args: argparse.Namespace) -> None:
+    command = [
+        sys.executable,
+        "scripts/run_agent_risk_toy_benchmark.py",
+        "--mode",
+        args.mode,
+        "--device",
+        args.device,
+        "--batch-size",
+        str(args.batch_size),
+        "--runs-root",
+        args.agent_root,
+        "--eval-interval",
+        str(args.eval_interval),
+        "--early-stop-patience",
+        str(args.early_stop_patience),
+        "--early-stop-min-evals",
+        str(args.early_stop_min_evals),
+        "--seeds",
+        *[str(seed) for seed in args.seeds],
+    ]
+    if args.agent_models:
+        command.extend(["--models", *args.agent_models])
+    _run(command)
+
+
 def main() -> None:
     args = build_parser().parse_args()
     datasets = [dataset for dataset in args.datasets if not (args.skip_cifar and dataset == "cifar10_corrupt")]
@@ -146,12 +241,28 @@ def main() -> None:
                 flush=True,
             )
 
+    if not args.skip_end_to_end:
+        for dataset in datasets:
+            _run_end_to_end(args, dataset=dataset)
+
+    if not args.skip_plugin:
+        _run_plugin(args)
+
+    if not args.skip_agent_risk:
+        _run_agent_risk(args)
+
     _run(
         [
             sys.executable,
             "scripts/generate_uncertainty_eml_report.py",
             "--runs-root",
             args.runs_root,
+            "--end-to-end-root",
+            args.end_to_end_root,
+            "--plugin-root",
+            args.plugin_root,
+            "--agent-root",
+            args.agent_root,
             "--output",
             args.report,
         ]

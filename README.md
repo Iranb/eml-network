@@ -225,7 +225,12 @@ Pluggable uncertainty/resistance validation:
 ```bash
 python scripts/run_uncertainty_frozen_feature_benchmark.py \
   --dataset synthetic_shape_uncertainty --mode smoke --device cpu --seeds 0 1 --num-workers 0
-python scripts/generate_uncertainty_eml_report.py
+python scripts/run_uncertainty_end_to_end_benchmark.py \
+  --dataset synthetic_shape_uncertainty --mode smoke --device cpu --seeds 0 1 --num-workers 0
+python scripts/run_responsibility_plugin_benchmark.py --mode smoke --device cpu --seeds 0 1 --num-workers 0
+python scripts/run_agent_risk_toy_benchmark.py --mode smoke --device cpu --seeds 0 1
+python scripts/generate_uncertainty_eml_report.py \
+  --output reports/EML_PLUGGABLE_PRIMITIVE_REPORT.md
 ```
 
 Real-server pluggable suite with early-stop reruns:
@@ -274,6 +279,7 @@ Focused stabilization reports:
 - [reports/EML_MASTER_NEXT_STEP_REPORT.md](./reports/EML_MASTER_NEXT_STEP_REPORT.md): master stop/go report.
 - [reports/MERC_REAL_SERVER_VALIDATION_REPORT.md](./reports/MERC_REAL_SERVER_VALIDATION_REPORT.md): real-server MERC go/no-go report.
 - [reports/EML_UNCERTAINTY_RESISTANCE_REPORT.md](./reports/EML_UNCERTAINTY_RESISTANCE_REPORT.md): uncertainty/resistance benchmark.
+- [reports/EML_PLUGGABLE_PRIMITIVE_REPORT.md](./reports/EML_PLUGGABLE_PRIMITIVE_REPORT.md): pluggable uncertainty, responsibility, and risk-decision benchmark.
 - [reports/CLAIM_STATUS.md](./reports/CLAIM_STATUS.md): current claim status ledger.
 - [reports/MERC_COMPARISON_FIGURE.png](./reports/MERC_COMPARISON_FIGURE.png): comparison figure for MERC vs baselines.
 
@@ -286,7 +292,10 @@ python scripts/run_mechanism_probes.py --mode smoke --seeds 0 1
 python scripts/run_image_representation_ablation.py --mode smoke --seeds 0 1 --num-workers 0
 python scripts/run_text_representation_ablation.py --mode smoke --seeds 0 1 --num-workers 0
 python scripts/generate_master_eml_report.py
-python scripts/run_uncertainty_resistance_benchmark.py --mode smoke --device cpu --num-workers 0
+python scripts/run_uncertainty_frozen_feature_benchmark.py --dataset synthetic_shape_uncertainty --mode smoke --device cpu --seeds 0 1 --num-workers 0
+python scripts/run_responsibility_plugin_benchmark.py --mode smoke --device cpu --seeds 0 1 --num-workers 0
+python scripts/run_agent_risk_toy_benchmark.py --mode smoke --device cpu --seeds 0 1
+python scripts/generate_uncertainty_eml_report.py --output reports/EML_PLUGGABLE_PRIMITIVE_REPORT.md
 ```
 
 Current verified result status: only completed report artifacts should be treated as verified. Medium/full CIFAR and multi-seed ablations are not claimed until they appear in the relevant `summary.csv`.

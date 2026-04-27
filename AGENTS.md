@@ -154,6 +154,7 @@ Always produce durable report artifacts for experiments:
   - `reports/EML_MASTER_NEXT_STEP_REPORT.md`
   - `reports/CLAIM_STATUS.md`
   - `reports/EML_UNCERTAINTY_RESISTANCE_REPORT.md`
+  - `reports/EML_PLUGGABLE_PRIMITIVE_REPORT.md`
 - never fabricate experiment results
 - mark unrun experiments as `NOT RUN` and record the reason
 - record failed runs with failure reasons when practical

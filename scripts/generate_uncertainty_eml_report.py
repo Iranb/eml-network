@@ -14,6 +14,9 @@ import run_eml_uncertainty_benchmark as benchmark
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Generate EML pluggable primitive report")
     parser.add_argument("--runs-root", default="reports/uncertainty_frozen/runs")
+    parser.add_argument("--end-to-end-root", default="reports/uncertainty_end_to_end/runs")
+    parser.add_argument("--plugin-root", default="reports/responsibility_plugin/runs")
+    parser.add_argument("--agent-root", default="reports/agent_risk_toy/runs")
     parser.add_argument("--output", default="reports/EML_PLUGGABLE_PRIMITIVE_REPORT.md")
     parser.add_argument("--include-superseded", action="store_true")
     return parser
@@ -81,14 +84,146 @@ def _mean(rows: list[dict[str, Any]], key: str) -> float:
     return float(sum(values) / len(values)) if values else float("nan")
 
 
-def generate_report(runs_root: str | Path, output: str | Path, include_superseded: bool = False) -> Path:
+def _completed(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [row for row in rows if row.get("status") == "COMPLETED"]
+
+
+def _is_true(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes"}
+
+
+def _early_stop_line(label: str, rows: list[dict[str, Any]]) -> str:
+    completed = _completed(rows)
+    if not completed:
+        return f"- {label}: MISSING."
+    early = sum(1 for row in completed if _is_true(row.get("early_stop_triggered")))
+    capped = sum(1 for row in completed if not _is_true(row.get("early_stop_triggered")))
+    suffix = "" if capped == 0 else f"; {capped} latest accepted rows reached the step cap"
+    return f"- {label}: {early}/{len(completed)} latest accepted completed rows early-stopped{suffix}."
+
+
+def _group_rows(rows: list[dict[str, Any]], keys: tuple[str, ...]) -> dict[tuple[str, ...], list[dict[str, Any]]]:
+    grouped: dict[tuple[str, ...], list[dict[str, Any]]] = defaultdict(list)
+    for row in _completed(rows):
+        grouped[tuple(str(row.get(key, "")) for key in keys)].append(row)
+    return grouped
+
+
+def _status_note(rows: list[dict[str, Any]], artifact_root: Path) -> str:
+    if rows:
+        failed = [row for row in rows if row.get("status") not in {"COMPLETED", ""}]
+        suffix = f"; {len(failed)} non-completed rows" if failed else ""
+        return f"Artifacts: `{artifact_root}` ({len(rows)} rows{suffix})."
+    return f"NOT RUN or MISSING. No `summary.csv` found at `{artifact_root}`."
+
+
+def _append_end_to_end_section(lines: list[str], rows: list[dict[str, Any]], root: Path) -> None:
+    lines.extend(
+        [
+            "## 6. End-to-End Results",
+            "",
+            _status_note(rows, root),
+            "",
+            "| dataset | model | seeds | clean acc | noisy acc | occluded acc | clean ECE | clean AURC | clean->noisy AUROC | clean->occluded AUROC |",
+            "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for (dataset, model), bucket in sorted(_group_rows(rows, ("dataset_name", "model_name")).items()):
+        lines.append(
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
+                dataset,
+                model,
+                len(bucket),
+                _fmt(_mean(bucket, "clean_accuracy")),
+                _fmt(_mean(bucket, "noisy_accuracy")),
+                _fmt(_mean(bucket, "occluded_accuracy")),
+                _fmt(_mean(bucket, "clean_ece")),
+                _fmt(_mean(bucket, "clean_aurc")),
+                _fmt(_mean(bucket, "clean_vs_noisy_auroc")),
+                _fmt(_mean(bucket, "clean_vs_occluded_auroc")),
+            )
+        )
+    lines.append("")
+
+
+def _append_plugin_section(lines: list[str], rows: list[dict[str, Any]], root: Path) -> None:
+    lines.extend(
+        [
+            "## 7. Responsibility Plugin Results",
+            "",
+            _status_note(rows, root),
+            "",
+            "| module | seeds | accuracy | AURC | null mean | null-severity corr | update mean | update-severity corr |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for (model,), bucket in sorted(_group_rows(rows, ("model_name",)).items()):
+        lines.append(
+            "| {} | {} | {} | {} | {} | {} | {} | {} |".format(
+                model,
+                len(bucket),
+                _fmt(_mean(bucket, "accuracy")),
+                _fmt(_mean(bucket, "selective_aurc")),
+                _fmt(_mean(bucket, "null_weight_mean")),
+                _fmt(_mean(bucket, "null_severity_corr")),
+                _fmt(_mean(bucket, "update_strength_mean")),
+                _fmt(_mean(bucket, "update_strength_severity_corr")),
+            )
+        )
+    lines.append("")
+
+
+def _append_agent_section(lines: list[str], rows: list[dict[str, Any]], root: Path) -> None:
+    lines.extend(
+        [
+            "## 8. Agent Risk Toy Results",
+            "",
+            _status_note(rows, root),
+            "",
+            "| model | seeds | action acc | unsafe rate | utility | reward | risk corr | approval precision | approval recall |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for (model,), bucket in sorted(_group_rows(rows, ("model_name",)).items()):
+        lines.append(
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
+                model,
+                len(bucket),
+                _fmt(_mean(bucket, "action_accuracy")),
+                _fmt(_mean(bucket, "unsafe_action_rate")),
+                _fmt(_mean(bucket, "expected_utility")),
+                _fmt(_mean(bucket, "risk_weighted_reward")),
+                _fmt(_mean(bucket, "risk_corr")),
+                _fmt(_mean(bucket, "approval_precision")),
+                _fmt(_mean(bucket, "approval_recall")),
+            )
+        )
+    lines.append("")
+
+
+def generate_report(
+    runs_root: str | Path,
+    output: str | Path,
+    include_superseded: bool = False,
+    end_to_end_root: str | Path = "reports/uncertainty_end_to_end/runs",
+    plugin_root: str | Path = "reports/responsibility_plugin/runs",
+    agent_root: str | Path = "reports/agent_risk_toy/runs",
+) -> Path:
     runs_root = Path(runs_root)
+    end_to_end_root = Path(end_to_end_root)
+    plugin_root = Path(plugin_root)
+    agent_root = Path(agent_root)
     output_path = Path(output)
     base_report = benchmark.generate_report(
         runs_root,
         output_path.with_name(f"{output_path.stem}_BASE{output_path.suffix}"),
     )
     rows = _latest_accepted_rows(_load_rows(runs_root), include_superseded=include_superseded)
+    end_to_end_rows = _latest_accepted_rows(_load_rows(end_to_end_root), include_superseded=include_superseded)
+    plugin_rows = _latest_accepted_rows(_load_rows(plugin_root), include_superseded=include_superseded)
+    agent_rows = _latest_accepted_rows(_load_rows(agent_root), include_superseded=include_superseded)
     grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         if row.get("status") == "COMPLETED":
@@ -122,6 +257,18 @@ def generate_report(runs_root: str | Path, output: str | Path, include_supersede
             lines.append(
                 f"- `{dataset}` supervised resistance correlations: noise {_fmt(_mean(supervised, 'pooled_resistance_noise_corr'))}, occlusion {_fmt(_mean(supervised, 'pooled_resistance_occlusion_corr'))}."
             )
+    lines.extend(
+        [
+            "",
+            "Latest accepted early-stop coverage:",
+            _early_stop_line("Frozen feature", rows),
+            _early_stop_line("End-to-end", end_to_end_rows),
+            _early_stop_line("Responsibility plugin", plugin_rows),
+            _early_stop_line("Agent risk toy", agent_rows),
+            "",
+            "Raw CSV files may contain superseded capped rows; this report uses the latest early-stopped replacement for each dataset/model/seed key unless `--include-superseded` is passed.",
+        ]
+    )
 
     lines.extend(
         [
@@ -140,7 +287,7 @@ def generate_report(runs_root: str | Path, output: str | Path, include_supersede
             "- Synthetic shape uncertainty: available through `SyntheticShapeEnergyDataset` corruptions.",
             "- CIFAR corruption wrapper: available when local CIFAR-10 and torchvision are available.",
             "- Text corruption: NOT RUN in this report.",
-            "- Agent risk toy: NOT RUN unless `scripts/run_agent_risk_toy_benchmark.py` artifacts are supplied.",
+            "- Agent risk toy: included when `scripts/run_agent_risk_toy_benchmark.py` artifacts are present.",
             "",
             "## 4. Models",
             "",
@@ -172,20 +319,24 @@ def generate_report(runs_root: str | Path, output: str | Path, include_supersede
             )
         )
 
+    lines.append("")
+    _append_end_to_end_section(lines, end_to_end_rows, end_to_end_root)
+    _append_plugin_section(lines, plugin_rows, plugin_root)
+    _append_agent_section(lines, agent_rows, agent_root)
+
+    agent_conclusion = (
+        "D. Does EML help action/risk decision? See the agent-risk table; this is only supported if EML models improve reward or unsafe-rate under matched settings."
+        if _completed(agent_rows)
+        else "D. Does EML help action/risk decision? NOT RUN in this report."
+    )
+    followup = (
+        "E. Next experiment: extend early-stop discipline to any MISSING artifact family before promoting an EML primitive claim."
+        if _completed(end_to_end_rows) or _completed(plugin_rows) or _completed(agent_rows)
+        else "E. Next experiment: run the same early-stop discipline for end-to-end uncertainty and responsibility-plugin artifacts before promoting any claim."
+    )
+
     lines.extend(
         [
-            "",
-            "## 6. End-to-End Results",
-            "",
-            "NOT RUN in this report. The current run isolates heads on frozen CNN features.",
-            "",
-            "## 7. Responsibility Plugin Results",
-            "",
-            "NOT RUN in this report unless separate responsibility-plugin artifacts are added.",
-            "",
-            "## 8. Agent Risk Toy Results",
-            "",
-            "NOT RUN in this report unless separate agent-risk artifacts are added.",
             "",
             "## 9. EML Diagnostics",
             "",
@@ -205,13 +356,16 @@ def generate_report(runs_root: str | Path, output: str | Path, include_supersede
             "",
             "C. Does EML help uncertainty/corruption/selective prediction? Use ECE, AURC, AUROC, and resistance correlations above; do not infer this from clean accuracy.",
             "",
-            "D. Does EML help action/risk decision? NOT RUN in this report.",
+            agent_conclusion,
             "",
-            "E. Next experiment: run the same early-stop discipline for end-to-end uncertainty and responsibility-plugin artifacts before promoting any claim.",
+            followup,
             "",
             "## Raw Artifacts",
             "",
             f"- Runs root: `{runs_root}`",
+            f"- End-to-end root: `{end_to_end_root}`",
+            f"- Responsibility-plugin root: `{plugin_root}`",
+            f"- Agent-risk root: `{agent_root}`",
             f"- Benchmark report generated by base runner: `{base_report}`",
         ]
     )
@@ -222,7 +376,14 @@ def generate_report(runs_root: str | Path, output: str | Path, include_supersede
 
 def main() -> None:
     args = build_parser().parse_args()
-    report_path = generate_report(args.runs_root, args.output, include_superseded=args.include_superseded)
+    report_path = generate_report(
+        args.runs_root,
+        args.output,
+        include_superseded=args.include_superseded,
+        end_to_end_root=args.end_to_end_root,
+        plugin_root=args.plugin_root,
+        agent_root=args.agent_root,
+    )
     print(json.dumps({"report": str(report_path)}, sort_keys=True))
 
 
