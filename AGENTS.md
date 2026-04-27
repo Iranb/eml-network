@@ -11,7 +11,9 @@ Primary validation tasks in this phase:
 MNIST remains an optional baseline only.
 Prototype / novelty / GCD behavior is auxiliary only.
 
-Think from EML energy fields, not Transformer blocks. The preferred path is:
+Think from EML drive/resistance primitives, not Transformer blocks. Field, efficient representation, and MERC modules are experimental branches, not validated preferred architectures.
+
+Experimental field path:
 
 ```text
 EMLSensor
@@ -23,15 +25,19 @@ EMLSensor
 -> EMLFieldReadout
 ```
 
-Image field and text field encoders are primary validation paths. PureEML image backbones, EMLTextBackbone, CNN, and MNIST models are compatibility baselines.
+Image field and text field encoders are validation paths, but they are not proven replacements for CNN/local text baselines. PureEML image backbones, EMLTextBackbone, CNN, and MNIST models are compatibility baselines.
 
 Current evidence must be stated cautiously:
 - `cnn_eml` is the strongest stable image baseline observed so far.
-- EML as a head is not proven better until frozen-feature and end-to-end head ablations show it under matched conditions.
-- Efficient EML representation trunks are not proven replacements for CNN/local text baselines until the ablation reports show it.
+- EML clean classification head advantage is not proven. Frozen-feature and end-to-end head ablations must beat linear/MLP/cosine under matched conditions before any claim.
+- End-to-end CNN plus cosine prototype is currently stronger than current EML and MERC heads on the latest CIFAR reports.
+- MERC head/block is currently no-go. Do not claim MERC works as a head or residual block unless a new report reverses that result.
+- Efficient EML representation trunks and field backbones are experimental and not proven replacements for CNN/local text baselines.
+- Support factorization is preliminary positive; conflict/resistance factorization is weak or negative.
+- Uncertainty/selective classification is the next target, not clean top-1 victory.
 - Prefer falsifiable ablation claims over adding more modules.
 
-The efficient representation path is also primary for this phase:
+Experimental efficient representation path:
 
 ```text
 local evidence
@@ -146,11 +152,17 @@ Always produce durable report artifacts for experiments:
   - `reports/IMAGE_REPRESENTATION_ABLATION_REPORT.md`
   - `reports/TEXT_REPRESENTATION_ABLATION_REPORT.md`
   - `reports/EML_MASTER_NEXT_STEP_REPORT.md`
+  - `reports/CLAIM_STATUS.md`
+  - `reports/EML_UNCERTAINTY_RESISTANCE_REPORT.md`
 - never fabricate experiment results
 - mark unrun experiments as `NOT RUN` and record the reason
 - record failed runs with failure reasons when practical
 - focus on ablation and measured diagnostics before adding new architecture
 - use staged hardening only as a measured ablation, not as an assumed improvement
+- keep a Claim Status table current when reports change
+- use linear, MLP, and cosine prototype as primary baselines for head claims
+- do not claim clean top-1 advantage unless the report directly supports it
+- report calibration, selective risk, corruption AUROC, and resistance/noise or resistance/occlusion correlations for uncertainty work
 
 Always run after meaningful changes:
 - `pytest`

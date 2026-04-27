@@ -44,6 +44,8 @@ HEADS = [
     "eml_no_ambiguity",
     "eml_centered_ambiguity",
     "eml_supervised_resistance",
+    "merc_linear",
+    "merc_energy",
 ]
 CONDITIONS = ("clean", "noisy", "occluded")
 
@@ -253,19 +255,20 @@ def _extract_features(backbone: ConvBackbone, loader: DataLoader, device: torch.
         "noise_level": [],
         "occlusion_level": [],
         "resistance_target": [],
+        "evidence_target": [],
     }
     for batch in loader:
         payload = _batch_to_dict(batch, device)
         collected["features"].append(backbone(payload["image"]).detach().cpu())
         collected["labels"].append(payload["label"].detach().cpu())
-        for key in ("noise_level", "occlusion_level", "resistance_target"):
+        for key in ("noise_level", "occlusion_level", "resistance_target", "evidence_target"):
             if key in payload:
                 collected[key].append(payload[key].detach().float().cpu().reshape(-1))
     result = {
         "features": torch.cat(collected["features"], dim=0),
         "labels": torch.cat(collected["labels"], dim=0),
     }
-    for key in ("noise_level", "occlusion_level", "resistance_target"):
+    for key in ("noise_level", "occlusion_level", "resistance_target", "evidence_target"):
         if collected[key]:
             result[key] = torch.cat(collected[key], dim=0)
     return result
@@ -315,6 +318,8 @@ def _evaluate_condition(
     logits_parts: list[torch.Tensor] = []
     uncertainty_parts: list[torch.Tensor] = []
     positive_resistance_parts: list[torch.Tensor] = []
+    support_score_parts: list[torch.Tensor] = []
+    conflict_score_parts: list[torch.Tensor] = []
     for start in range(0, features.size(0), batch_size):
         end = min(features.size(0), start + batch_size)
         batch_features = features[start:end].to(device=device, dtype=torch.float32)
@@ -331,6 +336,10 @@ def _evaluate_condition(
         uncertainty_parts.append(uncertainty.detach().cpu())
         if torch.is_tensor(outputs.get("positive_resistance")):
             positive_resistance_parts.append(outputs["positive_resistance"].detach().cpu())
+        if torch.is_tensor(outputs.get("support_factors")):
+            support_score_parts.append(outputs["support_factors"].detach().float().mean(dim=-1).cpu())
+        if torch.is_tensor(outputs.get("conflict_factors")):
+            conflict_score_parts.append(outputs["conflict_factors"].detach().float().mean(dim=-1).cpu())
     logits = torch.cat(logits_parts, dim=0)
     probs = torch.softmax(logits, dim=-1)
     confidence = probs.max(dim=-1).values
@@ -362,6 +371,18 @@ def _evaluate_condition(
             result["resistance_noise_corr"] = pearson_corr(positive_resistance, split["noise_level"])
         if torch.is_tensor(split.get("occlusion_level")):
             result["resistance_occlusion_corr"] = pearson_corr(positive_resistance, split["occlusion_level"])
+    if support_score_parts:
+        support_score = torch.cat(support_score_parts, dim=0)
+        result["support_score"] = support_score
+        result["support_score_mean"] = float(support_score.mean().item())
+        if torch.is_tensor(split.get("evidence_target")):
+            result["support_evidence_corr"] = pearson_corr(support_score, split["evidence_target"])
+    if conflict_score_parts:
+        conflict_score = torch.cat(conflict_score_parts, dim=0)
+        result["conflict_score"] = conflict_score
+        result["conflict_score_mean"] = float(conflict_score.mean().item())
+        if torch.is_tensor(split.get("resistance_target")):
+            result["conflict_resistance_corr"] = pearson_corr(conflict_score, split["resistance_target"])
     return result
 
 
@@ -369,6 +390,10 @@ def _pooled_resistance_correlations(condition_metrics: Dict[str, Dict[str, Any]]
     resistance_parts: list[torch.Tensor] = []
     noise_parts: list[torch.Tensor] = []
     occlusion_parts: list[torch.Tensor] = []
+    support_parts: list[torch.Tensor] = []
+    evidence_parts: list[torch.Tensor] = []
+    conflict_parts: list[torch.Tensor] = []
+    resistance_target_parts: list[torch.Tensor] = []
     for condition in CONDITIONS:
         metrics = condition_metrics[condition]
         split = eval_splits["clean"] if condition == "clean" else eval_splits[condition]
@@ -380,11 +405,23 @@ def _pooled_resistance_correlations(condition_metrics: Dict[str, Dict[str, Any]]
             noise_parts.append(split["noise_level"].detach().cpu().reshape(-1))
         if torch.is_tensor(split.get("occlusion_level")):
             occlusion_parts.append(split["occlusion_level"].detach().cpu().reshape(-1))
+        support = metrics.get("support_score")
+        if isinstance(support, torch.Tensor) and torch.is_tensor(split.get("evidence_target")):
+            support_parts.append(support)
+            evidence_parts.append(split["evidence_target"].detach().cpu().reshape(-1))
+        conflict = metrics.get("conflict_score")
+        if isinstance(conflict, torch.Tensor) and torch.is_tensor(split.get("resistance_target")):
+            conflict_parts.append(conflict)
+            resistance_target_parts.append(split["resistance_target"].detach().cpu().reshape(-1))
     output: Dict[str, float] = {}
     if resistance_parts and noise_parts and len(resistance_parts) == len(noise_parts):
         output["pooled_resistance_noise_corr"] = pearson_corr(torch.cat(resistance_parts), torch.cat(noise_parts))
     if resistance_parts and occlusion_parts and len(resistance_parts) == len(occlusion_parts):
         output["pooled_resistance_occlusion_corr"] = pearson_corr(torch.cat(resistance_parts), torch.cat(occlusion_parts))
+    if support_parts and evidence_parts and len(support_parts) == len(evidence_parts):
+        output["pooled_support_evidence_corr"] = pearson_corr(torch.cat(support_parts), torch.cat(evidence_parts))
+    if conflict_parts and resistance_target_parts and len(conflict_parts) == len(resistance_target_parts):
+        output["pooled_conflict_resistance_corr"] = pearson_corr(torch.cat(conflict_parts), torch.cat(resistance_target_parts))
     return output
 
 
@@ -520,7 +557,7 @@ def _train_and_evaluate_head(
         )
         scores = torch.cat([clean_uncertainty, corrupt_uncertainty], dim=0)
         summary[f"clean_vs_{corruption}_auroc"] = binary_auroc(scores, labels)
-    summary.update(_pooled_resistance_correlations(condition_metrics, {"clean": clean_test_split, **eval_splits}))
+    summary.update(_pooled_resistance_correlations(condition_metrics, {**eval_splits, "clean": clean_test_split}))
     predictions_path = logger.run_dir / "uncertainty_eval.pt"
     torch.save(
         {
@@ -572,13 +609,16 @@ def generate_report(runs_root: str | Path, output: str | Path) -> Path:
             grouped[(str(row.get("dataset_name", "")), str(row.get("model_name", "")))].append(row)
 
     lines = [
-        "# EML Uncertainty and Selective Classification Benchmark",
+        "# EML Uncertainty and Resistance Benchmark",
         "",
         "## Scope",
         "",
         "- Frozen CNN features with head-only comparisons.",
         "- Baselines: `linear`, `mlp`, `cosine_prototype`.",
         "- EML heads: `eml_no_ambiguity`, `eml_centered_ambiguity`, `eml_supervised_resistance`.",
+        "- MERC heads: `merc_linear`, `merc_energy`.",
+        "- Corruption tasks: SyntheticShape clean/noisy/occluded; CIFAR clean/noisy/occluded when `torchvision` and data are available.",
+        "- Synthetic label-noise ablation: NOT RUN in this report; it remains optional and should be added only with explicit label-noise controls.",
         "- Clean CIFAR accuracy claims are intentionally conservative.",
         "",
         "## Run Status",
@@ -606,8 +646,8 @@ def generate_report(runs_root: str | Path, output: str | Path) -> Path:
                 "",
                 f"## {dataset_name}",
                 "",
-                "| model | clean acc | noisy acc | occluded acc | clean ECE | clean Brier | clean selective AURC | clean->noisy AUROC | clean->occluded AUROC | pooled resistance-noise corr | pooled resistance-occlusion corr |",
-                "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+                "| model | clean acc | noisy acc | occluded acc | clean ECE | clean Brier | clean selective AURC | clean->noisy AUROC | clean->occluded AUROC | resistance-noise corr | resistance-occlusion corr | support-evidence corr | conflict-resistance corr |",
+                "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
             ]
         )
         dataset_models = {model for ds, model in grouped if ds == dataset_name}
@@ -623,7 +663,7 @@ def generate_report(runs_root: str | Path, output: str | Path) -> Path:
                 return float(sum(values) / len(values)) if values else float("nan")
 
             lines.append(
-                "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
+                "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
                     model_name,
                     _fmt(mean_of("clean_accuracy")),
                     _fmt(mean_of("noisy_accuracy")),
@@ -635,6 +675,8 @@ def generate_report(runs_root: str | Path, output: str | Path) -> Path:
                     _fmt(mean_of("clean_vs_occluded_auroc")),
                     _fmt(mean_of("pooled_resistance_noise_corr")),
                     _fmt(mean_of("pooled_resistance_occlusion_corr")),
+                    _fmt(mean_of("pooled_support_evidence_corr")),
+                    _fmt(mean_of("pooled_conflict_resistance_corr")),
                 )
             )
 
@@ -682,13 +724,23 @@ def generate_report(runs_root: str | Path, output: str | Path) -> Path:
             acc_claim = "supported in this benchmark only" if math.isfinite(eml_acc) and math.isfinite(cosine_acc) and eml_acc > cosine_acc else "not supported"
             cal_claim = "better" if math.isfinite(eml_ece) and math.isfinite(cosine_ece) and eml_ece < cosine_ece else "not better"
             sel_claim = "better" if math.isfinite(eml_aurc) and math.isfinite(cosine_aurc) and eml_aurc < cosine_aurc else "not better"
-            corr_claim = "supported" if math.isfinite(noisy_corr) or math.isfinite(occ_corr) else "not supported"
+            corr_strength = max(abs(noisy_corr) if math.isfinite(noisy_corr) else 0.0, abs(occ_corr) if math.isfinite(occ_corr) else 0.0)
+            corr_claim = "supported" if corr_strength >= 0.2 else "not supported or weak"
             lines.append(f"- `{dataset_name}` clean accuracy vs cosine: EML centered {_fmt(eml_acc)} vs cosine {_fmt(cosine_acc)}. Head advantage is {acc_claim}.")
             lines.append(f"- `{dataset_name}` calibration vs cosine: EML centered ECE {_fmt(eml_ece)} vs cosine {_fmt(cosine_ece)}. Calibration is {cal_claim}.")
             lines.append(f"- `{dataset_name}` selective prediction vs cosine: EML centered clean AURC {_fmt(eml_aurc)} vs cosine {_fmt(cosine_aurc)}. Selective prediction is {sel_claim}.")
             lines.append(f"- `{dataset_name}` resistance-correlation check: noise {_fmt(noisy_corr)}, occlusion {_fmt(occ_corr)}. Corruption correlation is {corr_claim}.")
         else:
             lines.append(f"- `{dataset_name}` has incomplete paired runs. EML head advantage is NOT SUPPORTED from this report.")
+        merc_rows = grouped.get((dataset_name, "merc_linear"), []) + grouped.get((dataset_name, "merc_energy"), [])
+        if merc_rows:
+            support_vals = [float(row.get("pooled_support_evidence_corr", "nan")) for row in merc_rows]
+            conflict_vals = [float(row.get("pooled_conflict_resistance_corr", "nan")) for row in merc_rows]
+            support_vals = [value for value in support_vals if math.isfinite(value)]
+            conflict_vals = [value for value in conflict_vals if math.isfinite(value)]
+            support_text = _fmt(sum(support_vals) / len(support_vals)) if support_vals else "MISSING"
+            conflict_text = _fmt(sum(conflict_vals) / len(conflict_vals)) if conflict_vals else "MISSING"
+            lines.append(f"- `{dataset_name}` MERC support/conflict alignment: support-evidence {support_text}, conflict-resistance {conflict_text}. MERC alignment is not claimed when values are MISSING or weak.")
     if ("cifar10", "cosine_prototype") not in grouped or ("cifar10", "eml_centered_ambiguity") not in grouped:
         lines.append("- `cifar10` was NOT RUN here because `torchvision` is unavailable in the local environment.")
     lines.extend(

@@ -9,7 +9,25 @@ It is:
 - not a Mamba or SSM model
 - not a backend or OpenClaw integration
 
-EML is not used only as a head. The preferred architecture uses EML as the core field primitive:
+EML is not treated as proven just because it is present in a model. Current reports show that clean classification head advantage is not established, and the repository now separates validated baselines from experimental EML branches.
+
+## Claim Status
+
+| Claim | Current status | Evidence path |
+| --- | --- | --- |
+| EML as a clean classifier head | Not proven | Frozen-feature and end-to-end head ablations do not clearly beat linear/MLP/cosine heads. |
+| EML as a backbone replacement | No-go currently | Field and efficient image paths are weaker than CNN baselines in available reports. |
+| MERC as a classifier head | No-go currently | MERC heads do not beat MLP/cosine on CIFAR frozen features. |
+| MERC as a residual block | No-go currently | MERC block variants made CIFAR end-to-end performance worse. |
+| Support factorization | Preliminary positive | MERC support factors align with synthetic evidence labels in limited synthetic evidence runs. |
+| Resistance/conflict factorization | Not working yet | Conflict/resistance alignment is weak or negative in current measurements. |
+| Uncertainty/selective classification | Next target | New benchmark focuses on calibration, selective risk, corruption AUROC, and resistance correlations. |
+
+See [reports/CLAIM_STATUS.md](./reports/CLAIM_STATUS.md) for the durable claim ledger.
+
+## Experimental Branches
+
+The field architecture is an experimental branch, not a validated preferred path:
 
 ```text
 EMLSensor
@@ -21,7 +39,7 @@ EMLSensor
 -> EMLFieldReadout
 ```
 
-This branch also explores EML as the representation mechanism itself:
+The efficient representation path is also experimental:
 
 ```text
 local evidence
@@ -33,12 +51,17 @@ local evidence
 -> representation readout
 ```
 
-Image field encoder and text field encoder are primary validation paths for the research direction. Old MNIST, CNN, PureEML, and text backbones remain compatibility baselines and must not be deleted.
+MERC is a hypothesis-neuron experiment. It remains in the repository for analysis, but the current implementation is no-go as a CIFAR head/block until new reports prove otherwise.
+
+Old MNIST, CNN, PureEML, and text backbones remain compatibility baselines and must not be deleted.
 
 Current evidence is deliberately conservative:
 - `cnn_eml` is the strongest stable image baseline observed so far.
 - EML as a CNN head has not yet been proven better than ordinary linear, MLP, or cosine prototype heads on the same frozen features.
+- End-to-end CNN plus cosine prototype is stronger than current EML and MERC heads in the latest real-server CIFAR runs.
 - Efficient EML representation trunks are still under validation and should not be described as proven replacements for CNN/local text baselines.
+- MERC head/block is currently no-go; support factors are the only preliminary positive signal.
+- Resistance/conflict factorization is not working yet.
 - Prototype, novelty, and GCD-style behavior remain auxiliary, not the central claim.
 
 ## Core Primitive
@@ -68,7 +91,7 @@ Design rules:
 - run `expm1`, `log`, and `softplus` in fp32 islands
 - expose diagnostics for drive, resistance, energy, activation, gates, consensus support/conflict, and attractors
 
-## Primary Field Paths
+## Experimental Field Paths
 
 Image field path:
 
@@ -98,9 +121,9 @@ text ids
 -> EMLFoundationCore
 ```
 
-The foundation core can inject field attractor states into typed slots instead of reducing field outputs to one event too early.
+The foundation core can inject field attractor states into typed slots instead of reducing field outputs to one event too early. This path is experimental and not a proven replacement for CNN/local text baselines.
 
-## Efficient Representation Path
+## Experimental Efficient Representation Path
 
 The efficient representation path avoids global pairwise token work:
 - images use local 2D windows
@@ -114,6 +137,14 @@ New validation models:
 - `EfficientEMLImageClassifier`
 - `EfficientEMLTextEncoder`
 - `EfficientEMLTextGenerationHead`
+
+MERC validation modules:
+- `MERCCell`
+- `MERCResidualBlock`
+- `MERCHeadLinearReadout`
+- `MERCHeadClassEnergy`
+
+Current status: MERC is retained for hypothesis-neuron research, but its head/block performance is no-go in the latest CIFAR reports.
 
 ## Repository Layout
 
@@ -223,6 +254,10 @@ Focused stabilization reports:
 - [reports/TEXT_REPRESENTATION_ABLATION_REPORT.md](./reports/TEXT_REPRESENTATION_ABLATION_REPORT.md): synthetic text representation ablations with window-8 as the default efficient path.
 - [reports/CIFAR_MEDIUM_REPORT.md](./reports/CIFAR_MEDIUM_REPORT.md): CIFAR medium status, gated by synthetic image success.
 - [reports/EML_MASTER_NEXT_STEP_REPORT.md](./reports/EML_MASTER_NEXT_STEP_REPORT.md): master stop/go report.
+- [reports/MERC_REAL_SERVER_VALIDATION_REPORT.md](./reports/MERC_REAL_SERVER_VALIDATION_REPORT.md): real-server MERC go/no-go report.
+- [reports/EML_UNCERTAINTY_RESISTANCE_REPORT.md](./reports/EML_UNCERTAINTY_RESISTANCE_REPORT.md): uncertainty/resistance benchmark.
+- [reports/CLAIM_STATUS.md](./reports/CLAIM_STATUS.md): current claim status ledger.
+- [reports/MERC_COMPARISON_FIGURE.png](./reports/MERC_COMPARISON_FIGURE.png): comparison figure for MERC vs baselines.
 
 Stabilization smoke commands:
 
@@ -233,6 +268,7 @@ python scripts/run_mechanism_probes.py --mode smoke --seeds 0 1
 python scripts/run_image_representation_ablation.py --mode smoke --seeds 0 1 --num-workers 0
 python scripts/run_text_representation_ablation.py --mode smoke --seeds 0 1 --num-workers 0
 python scripts/generate_master_eml_report.py
+python scripts/run_uncertainty_resistance_benchmark.py --mode smoke --device cpu --num-workers 0
 ```
 
 Current verified result status: only completed report artifacts should be treated as verified. Medium/full CIFAR and multi-seed ablations are not claimed until they appear in the relevant `summary.csv`.
@@ -257,12 +293,14 @@ Training scripts and the foundation core expose:
 - attractor activation and injection norm
 - representation readout weights
 
-The field foundation smoke run proves:
+The field foundation smoke run checks:
 - image field path runs
 - text field path runs
 - attractor states are consumed by the foundation slot graph
 - losses stay finite
 - diagnostics remain available
+
+It does not prove that field or efficient EML backbones outperform CNN/local text baselines.
 
 ## Non-Goals
 
