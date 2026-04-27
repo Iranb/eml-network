@@ -25,6 +25,8 @@ EML is not treated as proven just because it is present in a model. Current repo
 
 See [reports/CLAIM_STATUS.md](./reports/CLAIM_STATUS.md) for the durable claim ledger.
 
+Comparison rule: model/network performance comparisons should run until early stop. If a run only reaches the configured step cap, treat it as incomplete until a later early-stopped replacement is recorded and cited.
+
 ## Experimental Branches
 
 The field architecture is an experimental branch, not a validated preferred path:
@@ -216,6 +218,22 @@ Smoke validation:
 ```bash
 python scripts/run_eml_validation_suite.py --mode smoke --device cpu
 python scripts/generate_eml_report.py
+```
+
+Pluggable uncertainty/resistance validation:
+
+```bash
+python scripts/run_uncertainty_frozen_feature_benchmark.py \
+  --dataset synthetic_shape_uncertainty --mode smoke --device cpu --seeds 0 1 --num-workers 0
+python scripts/generate_uncertainty_eml_report.py
+```
+
+Real-server pluggable suite with early-stop reruns:
+
+```bash
+python scripts/run_pluggable_eml_real_server_suite.py \
+  --device cuda --data-dir /data16T/hyq/dataset/data \
+  --seeds 0 1 2 --num-workers 0 --mode medium
 ```
 
 Longer modes:

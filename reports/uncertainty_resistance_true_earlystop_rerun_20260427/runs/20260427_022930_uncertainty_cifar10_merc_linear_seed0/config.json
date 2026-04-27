@@ -1,0 +1,27 @@
+{
+  "backbone_steps": 300,
+  "batch_size": 64,
+  "dataset_name": "cifar10",
+  "device": "cuda",
+  "early_stop_min_evals": 2,
+  "early_stop_patience": 4,
+  "eval_interval": 25,
+  "experiment_type": "frozen_features_uncertainty",
+  "head_steps": 800,
+  "mode": "uncertainty_benchmark",
+  "model_name": "merc_linear",
+  "num_workers": 0,
+  "seed": 0,
+  "selected_heads": [
+    "linear",
+    "cosine_prototype",
+    "eml_no_ambiguity",
+    "eml_centered_ambiguity",
+    "eml_supervised_resistance",
+    "merc_linear",
+    "merc_energy"
+  ],
+  "task_name": "image_uncertainty_selective_classification",
+  "test_size": 1024,
+  "train_size": 4096
+}

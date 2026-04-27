@@ -64,6 +64,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--allow-download", action="store_true")
     parser.add_argument("--seeds", nargs="+", type=int, default=[0])
+    parser.add_argument("--heads", nargs="+", choices=HEADS, default=None, help="Optional subset of heads to run.")
+    parser.add_argument("--backbone-steps", type=int, default=None, help="Override the mode's backbone pretraining steps.")
+    parser.add_argument("--head-steps", type=int, default=None, help="Override the mode's head training steps.")
+    parser.add_argument("--eval-interval", type=int, default=None, help="Override the mode's head evaluation interval.")
     parser.add_argument("--early-stop-patience", type=int, default=4)
     parser.add_argument("--early-stop-min-evals", type=int, default=2)
     return parser
@@ -87,6 +91,17 @@ def _defaults(mode: str) -> Dict[str, int]:
         "head_steps": 40,
         "eval_interval": 10,
     }
+
+
+def _resolve_sizes(args: argparse.Namespace) -> Dict[str, int]:
+    sizes = _defaults(args.mode)
+    if args.backbone_steps is not None:
+        sizes["backbone_steps"] = args.backbone_steps
+    if args.head_steps is not None:
+        sizes["head_steps"] = args.head_steps
+    if args.eval_interval is not None:
+        sizes["eval_interval"] = args.eval_interval
+    return sizes
 
 
 def _device(name: str) -> torch.device:
@@ -451,6 +466,12 @@ def _train_and_evaluate_head(
             "device": str(device),
             "batch_size": args.batch_size,
             "num_workers": args.num_workers,
+            "selected_heads": list(args.heads or HEADS),
+            "backbone_steps": sizes["backbone_steps"],
+            "head_steps": sizes["head_steps"],
+            "eval_interval": sizes["eval_interval"],
+            "early_stop_patience": args.early_stop_patience,
+            "early_stop_min_evals": args.early_stop_min_evals,
             "train_size": int(train_split["features"].size(0)),
             "test_size": int(next(iter(eval_splits.values()))["features"].size(0)),
         },
@@ -772,7 +793,7 @@ def _run_dataset(args: argparse.Namespace, dataset_name: str, seed: int, sizes: 
         condition: _extract_features(backbone, _loader(dataset, args.batch_size, args.num_workers, shuffle=False), device)
         for condition, dataset in eval_sets.items()
     }
-    for head_name in HEADS:
+    for head_name in args.heads or HEADS:
         _train_and_evaluate_head(
             args=args,
             dataset_name=dataset_name,
@@ -788,7 +809,7 @@ def _run_dataset(args: argparse.Namespace, dataset_name: str, seed: int, sizes: 
 
 def run(args: argparse.Namespace) -> Path:
     _set_loader_strategy(args.num_workers)
-    sizes = _defaults(args.mode)
+    sizes = _resolve_sizes(args)
     dataset_names = ["synthetic_shape", "cifar10"] if args.dataset == "all" else [args.dataset]
     for dataset_name in dataset_names:
         for seed in args.seeds:
@@ -805,6 +826,12 @@ def run(args: argparse.Namespace) -> Path:
                         "dataset_name": dataset_name,
                         "seed": seed,
                         "device": args.device,
+                        "selected_heads": list(args.heads or HEADS),
+                        "backbone_steps": sizes["backbone_steps"],
+                        "head_steps": sizes["head_steps"],
+                        "eval_interval": sizes["eval_interval"],
+                        "early_stop_patience": args.early_stop_patience,
+                        "early_stop_min_evals": args.early_stop_min_evals,
                     },
                     reason=repr(exc),
                     root=args.runs_root,

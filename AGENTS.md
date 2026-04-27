@@ -163,6 +163,7 @@ Always produce durable report artifacts for experiments:
 - use linear, MLP, and cosine prototype as primary baselines for head claims
 - do not claim clean top-1 advantage unless the report directly supports it
 - report calibration, selective risk, corruption AUROC, and resistance/noise or resistance/occlusion correlations for uncertainty work
+- when comparing model/network performance, run each comparison until early stop; a row that only hits `max_steps` is incomplete unless a later early-stopped replacement row is recorded and cited
 
 Always run after meaningful changes:
 - `pytest`
