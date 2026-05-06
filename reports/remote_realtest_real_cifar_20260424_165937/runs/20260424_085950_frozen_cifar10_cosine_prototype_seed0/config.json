@@ -1,0 +1,15 @@
+{
+  "batch_size": 64,
+  "dataset_name": "cifar10",
+  "device": "cuda",
+  "experiment_type": "frozen_features",
+  "features_dir": "reports/real_cifar_20260424_165937/features/cifar10_medium_seed0",
+  "lr": 0.001,
+  "mode": "head_ablation",
+  "model_name": "cosine_prototype",
+  "pairwise_margin": 0.0,
+  "pairwise_weight": 0.0,
+  "seed": 0,
+  "steps": 300,
+  "task_name": "image_classification"
+}

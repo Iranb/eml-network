@@ -1,0 +1,15 @@
+{
+  "dataset": "cifar10",
+  "feature_dim": 64,
+  "image_size": 32,
+  "input_channels": 3,
+  "num_classes": 10,
+  "pretrain": {
+    "feature_pretrain_accuracy": 0.734375,
+    "feature_pretrain_loss": 1.0152112245559692
+  },
+  "seed": 0,
+  "test_size": 512,
+  "train_size": 2048,
+  "val_size": 512
+}

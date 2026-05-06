@@ -1,0 +1,12 @@
+{
+  "batch_size": 64,
+  "dataset_name": "cifar10",
+  "device": "cuda",
+  "experiment_type": "end_to_end",
+  "loss_mode": "ce_pairwise",
+  "mode": "head_ablation",
+  "model_name": "merc_linear",
+  "num_workers": 0,
+  "seed": 2,
+  "task_name": "image_classification"
+}

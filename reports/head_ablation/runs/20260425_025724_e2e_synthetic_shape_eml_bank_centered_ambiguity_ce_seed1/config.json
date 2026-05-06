@@ -1,0 +1,18 @@
+{
+  "batch_size": 32,
+  "dataset_name": "synthetic_shape",
+  "device": "cpu",
+  "experiment_type": "end_to_end",
+  "head_name": "eml_centered_ambiguity",
+  "loss_mode": "ce",
+  "lr": 0.001,
+  "mode": "head_ablation",
+  "model_name": "eml_bank_centered_ambiguity",
+  "pairwise_margin": 0.0,
+  "pairwise_weight": 0.0,
+  "seed": 1,
+  "steps": 30,
+  "task_name": "image_classification",
+  "use_eml_residual_bank": true,
+  "use_merc_block": false
+}

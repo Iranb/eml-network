@@ -1,0 +1,18 @@
+{
+  "batch_size": 32,
+  "dataset_name": "synthetic_shape",
+  "device": "cpu",
+  "experiment_type": "end_to_end",
+  "head_name": "merc_energy",
+  "loss_mode": "ce",
+  "lr": 0.001,
+  "mode": "head_ablation",
+  "model_name": "merc_block_energy",
+  "pairwise_margin": 0.0,
+  "pairwise_weight": 0.0,
+  "seed": 0,
+  "steps": 30,
+  "task_name": "image_classification",
+  "use_eml_residual_bank": false,
+  "use_merc_block": true
+}

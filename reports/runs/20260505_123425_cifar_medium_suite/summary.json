@@ -1,0 +1,23 @@
+{
+  "cuda_available": false,
+  "dataset_name": "CIFAR10",
+  "device": "cpu",
+  "git_commit": "9ce7b7d",
+  "hostname": "Mac-mini.local",
+  "metrics_json": "{}",
+  "mode": "smoke",
+  "model_name": "selected_image_models",
+  "num_params": 0,
+  "platform": "macOS-15.1-arm64-arm-64bit",
+  "python_version": "3.12.7",
+  "reason": "smoke mode: not requested in this mode",
+  "run_dir": "reports/runs/20260505_123425_cifar_medium_suite",
+  "run_id": "cifar_medium_suite",
+  "seed": 0,
+  "status": "NOT RUN",
+  "task_name": "image_cifar",
+  "timestamp": "2026-05-05T12:34:25Z",
+  "torch_version": "2.10.0",
+  "torchvision_version": "0.25.0",
+  "trainable_params": 0
+}

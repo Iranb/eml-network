@@ -1,0 +1,12 @@
+{
+  "dataset_name": "synthetic_probe_tensors",
+  "device": "cpu",
+  "mode": "ablation",
+  "model_name": "ablation_thresholded_null",
+  "responsibility_distribution_mode": "thresholded_null",
+  "responsibility_mode": true,
+  "seed": 25,
+  "task_name": "mechanism_probe",
+  "update_mode": "precision",
+  "use_null": true
+}

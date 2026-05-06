@@ -1,7 +1,7 @@
 # EML Master Next Step Report
 
 ## Executive Summary
-- Head isolation: NOT PROVEN: current artifacts include `eml_raw_ambiguity` as the best mean smoke-scale head at 0.2070, but this is not sufficient to claim EML heads beat ordinary heads under matched medium/real-data conditions.
+- Head isolation: NOT PROVEN: best mean head result is `merc_linear_small` at 0.2148; best EML head is `eml_raw_ambiguity` at 0.2070.
 - Efficient image synthetic gate: `EfficientEMLImageClassifier_baseline` reached `0.3750`; CIFAR medium remains gated below `0.8000`.
 - Mechanism conclusions should be read from probe success and diagnostics tables, not from synthetic task accuracy alone.
 - Representation trunk claims remain conditional until efficient image/text paths beat simple baselines under the same budgets.
@@ -19,10 +19,10 @@
 ## Run Status
 | suite | completed | failed | not run |
 | --- | ---: | ---: | ---: |
-| head | 64 | 0 | 44 |
+| head | 108 | 0 | 60 |
 | mechanism | 98 | 0 | 0 |
-| image | 26 | 0 | 0 |
-| text | 20 | 0 | 0 |
+| image | 54 | 0 | 0 |
+| text | 42 | 0 | 0 |
 | cifar | 0 | 0 | 1 |
 
 ## Head Isolation Results
@@ -113,7 +113,7 @@ Per-step time, examples/sec, tokens/sec, parameter counts, and peak memory are s
 Run medium head isolation and end-to-end CNN+head ablations on CIFAR only after synthetic smoke remains stable, then compare EML centered ambiguity against cosine and MLP heads with bootstrap deltas.
 
 ## Stop/Go Decisions
-- EML as head: NOT PROVEN: current artifacts include `eml_raw_ambiguity` as the best mean smoke-scale head at 0.2070, but this is not sufficient to claim EML heads beat ordinary heads under matched medium/real-data conditions.
+- EML as head: NOT PROVEN: best mean head result is `merc_linear_small` at 0.2148; best EML head is `eml_raw_ambiguity` at 0.2070.
 - EML as refinement: GO only as a controlled ablation against the same CNN feature extractor and losses.
 - EML as representation trunk: HOLD until synthetic image efficient path clears `0.8` and beats local baselines.
 - EML as foundation architecture: HOLD until representation trunk validation improves.
@@ -234,6 +234,66 @@ Run medium head isolation and end-to-end CNN+head ablations on CIFAR only after 
   - `e2e_synthetic_shape_eml_centered_ambiguity_ce_pairwise_seed1`: `reports/head_ablation/runs/20260424_085131_e2e_synthetic_shape_eml_centered_ambiguity_ce_pairwise_seed1`
   - `e2e_synthetic_shape_eml_bank_centered_ambiguity_ce_seed1`: `reports/head_ablation/runs/20260424_085133_e2e_synthetic_shape_eml_bank_centered_ambiguity_ce_seed1`
   - `e2e_synthetic_shape_eml_bank_centered_ambiguity_ce_pairwise_seed1`: `reports/head_ablation/runs/20260424_085135_e2e_synthetic_shape_eml_bank_centered_ambiguity_ce_pairwise_seed1`
+  - `frozen_synthetic_shape_linear_seed0`: `reports/head_ablation/runs/20260425_025608_frozen_synthetic_shape_linear_seed0`
+  - `frozen_synthetic_shape_mlp_seed0`: `reports/head_ablation/runs/20260425_025609_frozen_synthetic_shape_mlp_seed0`
+  - `frozen_synthetic_shape_cosine_prototype_seed0`: `reports/head_ablation/runs/20260425_025609_frozen_synthetic_shape_cosine_prototype_seed0`
+  - `frozen_synthetic_shape_eml_no_ambiguity_seed0`: `reports/head_ablation/runs/20260425_025609_frozen_synthetic_shape_eml_no_ambiguity_seed0`
+  - `frozen_synthetic_shape_eml_raw_ambiguity_seed0`: `reports/head_ablation/runs/20260425_025610_frozen_synthetic_shape_eml_raw_ambiguity_seed0`
+  - `frozen_synthetic_shape_eml_centered_ambiguity_seed0`: `reports/head_ablation/runs/20260425_025610_frozen_synthetic_shape_eml_centered_ambiguity_seed0`
+  - `frozen_synthetic_shape_merc_linear_seed0`: `reports/head_ablation/runs/20260425_025611_frozen_synthetic_shape_merc_linear_seed0`
+  - `frozen_synthetic_shape_merc_energy_seed0`: `reports/head_ablation/runs/20260425_025611_frozen_synthetic_shape_merc_energy_seed0`
+  - `frozen_synthetic_shape_merc_linear_small_seed0`: `reports/head_ablation/runs/20260425_025612_frozen_synthetic_shape_merc_linear_small_seed0`
+  - `frozen_synthetic_shape_merc_energy_small_seed0`: `reports/head_ablation/runs/20260425_025612_frozen_synthetic_shape_merc_energy_small_seed0`
+  - `frozen_synthetic_shape_linear_seed1`: `reports/head_ablation/runs/20260425_025612_frozen_synthetic_shape_linear_seed1`
+  - `frozen_synthetic_shape_mlp_seed1`: `reports/head_ablation/runs/20260425_025613_frozen_synthetic_shape_mlp_seed1`
+  - `frozen_synthetic_shape_cosine_prototype_seed1`: `reports/head_ablation/runs/20260425_025613_frozen_synthetic_shape_cosine_prototype_seed1`
+  - `frozen_synthetic_shape_eml_no_ambiguity_seed1`: `reports/head_ablation/runs/20260425_025613_frozen_synthetic_shape_eml_no_ambiguity_seed1`
+  - `frozen_synthetic_shape_eml_raw_ambiguity_seed1`: `reports/head_ablation/runs/20260425_025613_frozen_synthetic_shape_eml_raw_ambiguity_seed1`
+  - `frozen_synthetic_shape_eml_centered_ambiguity_seed1`: `reports/head_ablation/runs/20260425_025613_frozen_synthetic_shape_eml_centered_ambiguity_seed1`
+  - `frozen_synthetic_shape_merc_linear_seed1`: `reports/head_ablation/runs/20260425_025614_frozen_synthetic_shape_merc_linear_seed1`
+  - `frozen_synthetic_shape_merc_energy_seed1`: `reports/head_ablation/runs/20260425_025614_frozen_synthetic_shape_merc_energy_seed1`
+  - `e2e_synthetic_shape_linear_ce_seed0`: `reports/head_ablation/runs/20260425_025608_e2e_synthetic_shape_linear_ce_seed0`
+  - `e2e_synthetic_shape_linear_ce_pairwise_seed0`: `reports/head_ablation/runs/20260425_025615_e2e_synthetic_shape_linear_ce_pairwise_seed0`
+  - `frozen_synthetic_shape_merc_linear_small_seed1`: `reports/head_ablation/runs/20260425_025615_frozen_synthetic_shape_merc_linear_small_seed1`
+  - `frozen_synthetic_shape_merc_energy_small_seed1`: `reports/head_ablation/runs/20260425_025615_frozen_synthetic_shape_merc_energy_small_seed1`
+  - `e2e_synthetic_shape_mlp_ce_seed0`: `reports/head_ablation/runs/20260425_025615_e2e_synthetic_shape_mlp_ce_seed0`
+  - `e2e_synthetic_shape_mlp_ce_pairwise_seed0`: `reports/head_ablation/runs/20260425_025619_e2e_synthetic_shape_mlp_ce_pairwise_seed0`
+  - `e2e_synthetic_shape_cosine_prototype_ce_seed0`: `reports/head_ablation/runs/20260425_025620_e2e_synthetic_shape_cosine_prototype_ce_seed0`
+  - `e2e_synthetic_shape_cosine_prototype_ce_pairwise_seed0`: `reports/head_ablation/runs/20260425_025624_e2e_synthetic_shape_cosine_prototype_ce_pairwise_seed0`
+  - `e2e_synthetic_shape_eml_no_ambiguity_ce_seed0`: `reports/head_ablation/runs/20260425_025627_e2e_synthetic_shape_eml_no_ambiguity_ce_seed0`
+  - `e2e_synthetic_shape_eml_no_ambiguity_ce_pairwise_seed0`: `reports/head_ablation/runs/20260425_025632_e2e_synthetic_shape_eml_no_ambiguity_ce_pairwise_seed0`
+  - `e2e_synthetic_shape_eml_centered_ambiguity_ce_seed0`: `reports/head_ablation/runs/20260425_025636_e2e_synthetic_shape_eml_centered_ambiguity_ce_seed0`
+  - `e2e_synthetic_shape_eml_centered_ambiguity_ce_pairwise_seed0`: `reports/head_ablation/runs/20260425_025640_e2e_synthetic_shape_eml_centered_ambiguity_ce_pairwise_seed0`
+  - `e2e_synthetic_shape_eml_bank_centered_ambiguity_ce_seed0`: `reports/head_ablation/runs/20260425_025643_e2e_synthetic_shape_eml_bank_centered_ambiguity_ce_seed0`
+  - `e2e_synthetic_shape_eml_bank_centered_ambiguity_ce_pairwise_seed0`: `reports/head_ablation/runs/20260425_025647_e2e_synthetic_shape_eml_bank_centered_ambiguity_ce_pairwise_seed0`
+  - `e2e_synthetic_shape_merc_linear_ce_seed0`: `reports/head_ablation/runs/20260425_025650_e2e_synthetic_shape_merc_linear_ce_seed0`
+  - `e2e_synthetic_shape_merc_linear_ce_pairwise_seed0`: `reports/head_ablation/runs/20260425_025653_e2e_synthetic_shape_merc_linear_ce_pairwise_seed0`
+  - `e2e_synthetic_shape_merc_energy_ce_seed0`: `reports/head_ablation/runs/20260425_025653_e2e_synthetic_shape_merc_energy_ce_seed0`
+  - `e2e_synthetic_shape_merc_energy_ce_pairwise_seed0`: `reports/head_ablation/runs/20260425_025657_e2e_synthetic_shape_merc_energy_ce_pairwise_seed0`
+  - `e2e_synthetic_shape_merc_block_linear_ce_seed0`: `reports/head_ablation/runs/20260425_025657_e2e_synthetic_shape_merc_block_linear_ce_seed0`
+  - `e2e_synthetic_shape_merc_block_linear_ce_pairwise_seed0`: `reports/head_ablation/runs/20260425_025657_e2e_synthetic_shape_merc_block_linear_ce_pairwise_seed0`
+  - `e2e_synthetic_shape_merc_block_energy_ce_seed0`: `reports/head_ablation/runs/20260425_025657_e2e_synthetic_shape_merc_block_energy_ce_seed0`
+  - `e2e_synthetic_shape_merc_block_energy_ce_pairwise_seed0`: `reports/head_ablation/runs/20260425_025657_e2e_synthetic_shape_merc_block_energy_ce_pairwise_seed0`
+  - `e2e_synthetic_shape_linear_ce_seed1`: `reports/head_ablation/runs/20260425_025657_e2e_synthetic_shape_linear_ce_seed1`
+  - `e2e_synthetic_shape_linear_ce_pairwise_seed1`: `reports/head_ablation/runs/20260425_025700_e2e_synthetic_shape_linear_ce_pairwise_seed1`
+  - `e2e_synthetic_shape_mlp_ce_seed1`: `reports/head_ablation/runs/20260425_025700_e2e_synthetic_shape_mlp_ce_seed1`
+  - `e2e_synthetic_shape_mlp_ce_pairwise_seed1`: `reports/head_ablation/runs/20260425_025704_e2e_synthetic_shape_mlp_ce_pairwise_seed1`
+  - `e2e_synthetic_shape_cosine_prototype_ce_seed1`: `reports/head_ablation/runs/20260425_025704_e2e_synthetic_shape_cosine_prototype_ce_seed1`
+  - `e2e_synthetic_shape_cosine_prototype_ce_pairwise_seed1`: `reports/head_ablation/runs/20260425_025707_e2e_synthetic_shape_cosine_prototype_ce_pairwise_seed1`
+  - `e2e_synthetic_shape_eml_no_ambiguity_ce_seed1`: `reports/head_ablation/runs/20260425_025710_e2e_synthetic_shape_eml_no_ambiguity_ce_seed1`
+  - `e2e_synthetic_shape_eml_no_ambiguity_ce_pairwise_seed1`: `reports/head_ablation/runs/20260425_025714_e2e_synthetic_shape_eml_no_ambiguity_ce_pairwise_seed1`
+  - `e2e_synthetic_shape_eml_centered_ambiguity_ce_seed1`: `reports/head_ablation/runs/20260425_025717_e2e_synthetic_shape_eml_centered_ambiguity_ce_seed1`
+  - `e2e_synthetic_shape_eml_centered_ambiguity_ce_pairwise_seed1`: `reports/head_ablation/runs/20260425_025721_e2e_synthetic_shape_eml_centered_ambiguity_ce_pairwise_seed1`
+  - `e2e_synthetic_shape_eml_bank_centered_ambiguity_ce_seed1`: `reports/head_ablation/runs/20260425_025724_e2e_synthetic_shape_eml_bank_centered_ambiguity_ce_seed1`
+  - `e2e_synthetic_shape_eml_bank_centered_ambiguity_ce_pairwise_seed1`: `reports/head_ablation/runs/20260425_025727_e2e_synthetic_shape_eml_bank_centered_ambiguity_ce_pairwise_seed1`
+  - `e2e_synthetic_shape_merc_linear_ce_seed1`: `reports/head_ablation/runs/20260425_025730_e2e_synthetic_shape_merc_linear_ce_seed1`
+  - `e2e_synthetic_shape_merc_linear_ce_pairwise_seed1`: `reports/head_ablation/runs/20260425_025733_e2e_synthetic_shape_merc_linear_ce_pairwise_seed1`
+  - `e2e_synthetic_shape_merc_energy_ce_seed1`: `reports/head_ablation/runs/20260425_025733_e2e_synthetic_shape_merc_energy_ce_seed1`
+  - `e2e_synthetic_shape_merc_energy_ce_pairwise_seed1`: `reports/head_ablation/runs/20260425_025736_e2e_synthetic_shape_merc_energy_ce_pairwise_seed1`
+  - `e2e_synthetic_shape_merc_block_linear_ce_seed1`: `reports/head_ablation/runs/20260425_025736_e2e_synthetic_shape_merc_block_linear_ce_seed1`
+  - `e2e_synthetic_shape_merc_block_linear_ce_pairwise_seed1`: `reports/head_ablation/runs/20260425_025736_e2e_synthetic_shape_merc_block_linear_ce_pairwise_seed1`
+  - `e2e_synthetic_shape_merc_block_energy_ce_seed1`: `reports/head_ablation/runs/20260425_025736_e2e_synthetic_shape_merc_block_energy_ce_seed1`
+  - `e2e_synthetic_shape_merc_block_energy_ce_pairwise_seed1`: `reports/head_ablation/runs/20260425_025736_e2e_synthetic_shape_merc_block_energy_ce_pairwise_seed1`
 - mechanism summary: `reports/mechanism_probes/runs/summary.csv`
   - `probe_all_noise_should_choose_null_sigmoid_gate_sum_seed0`: `reports/mechanism_probes/runs/20260424_085143_probe_all_noise_should_choose_null_sigmoid_gate_sum_seed0`
   - `probe_all_noise_should_choose_null_sigmoid_gate_mean_seed0`: `reports/mechanism_probes/runs/20260424_085143_probe_all_noise_should_choose_null_sigmoid_gate_mean_seed0`
@@ -360,6 +420,34 @@ Run medium head isolation and end-to-end CNN+head ablations on CIFAR only after 
   - `efficient_combo_staged_seed1`: `reports/image_representation_ablation/runs/20260424_085200_efficient_combo_staged_seed1`
   - `efficient_combo_bypass_staged_seed1`: `reports/image_representation_ablation/runs/20260424_085200_efficient_combo_bypass_staged_seed1`
   - `head_without_ambiguity_seed1`: `reports/image_representation_ablation/runs/20260424_085200_head_without_ambiguity_seed1`
+  - `cnn_eml_workers0_seed0`: `reports/image_representation_ablation/runs/20260505_123520_cnn_eml_workers0_seed0`
+  - `eml_edge_kan_seed0`: `reports/image_representation_ablation/runs/20260505_123521_eml_edge_kan_seed0`
+  - `pure_eml_workers0_seed0`: `reports/image_representation_ablation/runs/20260505_123521_pure_eml_workers0_seed0`
+  - `efficient_baseline_seed0`: `reports/image_representation_ablation/runs/20260505_123521_efficient_baseline_seed0`
+  - `efficient_centered_ambiguity_seed0`: `reports/image_representation_ablation/runs/20260505_123521_efficient_centered_ambiguity_seed0`
+  - `efficient_thresholded_null_seed0`: `reports/image_representation_ablation/runs/20260505_123521_efficient_thresholded_null_seed0`
+  - `efficient_precision_identity_seed0`: `reports/image_representation_ablation/runs/20260505_123521_efficient_precision_identity_seed0`
+  - `efficient_combo_seed0`: `reports/image_representation_ablation/runs/20260505_123522_efficient_combo_seed0`
+  - `efficient_combo_no_composition_seed0`: `reports/image_representation_ablation/runs/20260505_123522_efficient_combo_no_composition_seed0`
+  - `efficient_combo_no_attractor_seed0`: `reports/image_representation_ablation/runs/20260505_123522_efficient_combo_no_attractor_seed0`
+  - `efficient_combo_sensor_bypass_seed0`: `reports/image_representation_ablation/runs/20260505_123522_efficient_combo_sensor_bypass_seed0`
+  - `efficient_combo_staged_seed0`: `reports/image_representation_ablation/runs/20260505_123522_efficient_combo_staged_seed0`
+  - `efficient_combo_bypass_staged_seed0`: `reports/image_representation_ablation/runs/20260505_123522_efficient_combo_bypass_staged_seed0`
+  - `head_without_ambiguity_seed0`: `reports/image_representation_ablation/runs/20260505_123523_head_without_ambiguity_seed0`
+  - `cnn_eml_workers0_seed1`: `reports/image_representation_ablation/runs/20260505_123523_cnn_eml_workers0_seed1`
+  - `eml_edge_kan_seed1`: `reports/image_representation_ablation/runs/20260505_123523_eml_edge_kan_seed1`
+  - `pure_eml_workers0_seed1`: `reports/image_representation_ablation/runs/20260505_123523_pure_eml_workers0_seed1`
+  - `efficient_baseline_seed1`: `reports/image_representation_ablation/runs/20260505_123523_efficient_baseline_seed1`
+  - `efficient_centered_ambiguity_seed1`: `reports/image_representation_ablation/runs/20260505_123523_efficient_centered_ambiguity_seed1`
+  - `efficient_thresholded_null_seed1`: `reports/image_representation_ablation/runs/20260505_123523_efficient_thresholded_null_seed1`
+  - `efficient_precision_identity_seed1`: `reports/image_representation_ablation/runs/20260505_123523_efficient_precision_identity_seed1`
+  - `efficient_combo_seed1`: `reports/image_representation_ablation/runs/20260505_123523_efficient_combo_seed1`
+  - `efficient_combo_no_composition_seed1`: `reports/image_representation_ablation/runs/20260505_123524_efficient_combo_no_composition_seed1`
+  - `efficient_combo_no_attractor_seed1`: `reports/image_representation_ablation/runs/20260505_123524_efficient_combo_no_attractor_seed1`
+  - `efficient_combo_sensor_bypass_seed1`: `reports/image_representation_ablation/runs/20260505_123524_efficient_combo_sensor_bypass_seed1`
+  - `efficient_combo_staged_seed1`: `reports/image_representation_ablation/runs/20260505_123524_efficient_combo_staged_seed1`
+  - `efficient_combo_bypass_staged_seed1`: `reports/image_representation_ablation/runs/20260505_123524_efficient_combo_bypass_staged_seed1`
+  - `head_without_ambiguity_seed1`: `reports/image_representation_ablation/runs/20260505_123524_head_without_ambiguity_seed1`
 - text summary: `reports/text_representation_ablation/runs/summary.csv`
   - `local_causal_conv_seed0`: `reports/text_representation_ablation/runs/20260424_085213_local_causal_conv_seed0`
   - `small_gru_seed0`: `reports/text_representation_ablation/runs/20260424_085213_small_gru_seed0`
@@ -381,5 +469,27 @@ Run medium head isolation and end-to-end CNN+head ablations on CIFAR only after 
   - `efficient_window8_chunk_attractor_seed1`: `reports/text_representation_ablation/runs/20260424_085214_efficient_window8_chunk_attractor_seed1`
   - `efficient_window8_staged_seed1`: `reports/text_representation_ablation/runs/20260424_085214_efficient_window8_staged_seed1`
   - `best_text_config_seed1`: `reports/text_representation_ablation/runs/20260424_085214_best_text_config_seed1`
+  - `local_causal_conv_seed0`: `reports/text_representation_ablation/runs/20260505_123520_local_causal_conv_seed0`
+  - `eml_edge_kan_text_seed0`: `reports/text_representation_ablation/runs/20260505_123521_eml_edge_kan_text_seed0`
+  - `small_gru_seed0`: `reports/text_representation_ablation/runs/20260505_123521_small_gru_seed0`
+  - `old_eml_text_backbone_seed0`: `reports/text_representation_ablation/runs/20260505_123521_old_eml_text_backbone_seed0`
+  - `efficient_window8_seed0`: `reports/text_representation_ablation/runs/20260505_123521_efficient_window8_seed0`
+  - `efficient_window8_thresholded_null_seed0`: `reports/text_representation_ablation/runs/20260505_123521_efficient_window8_thresholded_null_seed0`
+  - `efficient_window8_precision_identity_seed0`: `reports/text_representation_ablation/runs/20260505_123521_efficient_window8_precision_identity_seed0`
+  - `efficient_window8_chunk_seed0`: `reports/text_representation_ablation/runs/20260505_123522_efficient_window8_chunk_seed0`
+  - `efficient_window8_chunk_attractor_seed0`: `reports/text_representation_ablation/runs/20260505_123522_efficient_window8_chunk_attractor_seed0`
+  - `efficient_window8_staged_seed0`: `reports/text_representation_ablation/runs/20260505_123522_efficient_window8_staged_seed0`
+  - `best_text_config_seed0`: `reports/text_representation_ablation/runs/20260505_123522_best_text_config_seed0`
+  - `local_causal_conv_seed1`: `reports/text_representation_ablation/runs/20260505_123522_local_causal_conv_seed1`
+  - `eml_edge_kan_text_seed1`: `reports/text_representation_ablation/runs/20260505_123522_eml_edge_kan_text_seed1`
+  - `small_gru_seed1`: `reports/text_representation_ablation/runs/20260505_123522_small_gru_seed1`
+  - `old_eml_text_backbone_seed1`: `reports/text_representation_ablation/runs/20260505_123522_old_eml_text_backbone_seed1`
+  - `efficient_window8_seed1`: `reports/text_representation_ablation/runs/20260505_123522_efficient_window8_seed1`
+  - `efficient_window8_thresholded_null_seed1`: `reports/text_representation_ablation/runs/20260505_123523_efficient_window8_thresholded_null_seed1`
+  - `efficient_window8_precision_identity_seed1`: `reports/text_representation_ablation/runs/20260505_123523_efficient_window8_precision_identity_seed1`
+  - `efficient_window8_chunk_seed1`: `reports/text_representation_ablation/runs/20260505_123523_efficient_window8_chunk_seed1`
+  - `efficient_window8_chunk_attractor_seed1`: `reports/text_representation_ablation/runs/20260505_123523_efficient_window8_chunk_attractor_seed1`
+  - `efficient_window8_staged_seed1`: `reports/text_representation_ablation/runs/20260505_123523_efficient_window8_staged_seed1`
+  - `best_text_config_seed1`: `reports/text_representation_ablation/runs/20260505_123523_best_text_config_seed1`
 - cifar summary: `reports/cifar_medium/runs/summary.csv`
   - `cifar_medium_synthetic_gate`: `reports/cifar_medium/runs/20260424_085232_cifar_medium_synthetic_gate`

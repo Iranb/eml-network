@@ -1,0 +1,11 @@
+{
+  "batch_size": 32,
+  "dataset_name": "cifar10",
+  "device": "cpu",
+  "experiment_type": "frozen_features",
+  "mode": "head_ablation",
+  "model_name": "cosine_prototype",
+  "num_workers": 0,
+  "seed": 0,
+  "task_name": "image_classification"
+}

@@ -1,0 +1,15 @@
+{
+  "dataset": "synthetic_shape",
+  "feature_dim": 64,
+  "image_size": 32,
+  "input_channels": 3,
+  "num_classes": 5,
+  "pretrain": {
+    "feature_pretrain_accuracy": 0.625,
+    "feature_pretrain_loss": 1.2439790964126587
+  },
+  "seed": 1,
+  "test_size": 128,
+  "train_size": 256,
+  "val_size": 128
+}

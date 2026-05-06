@@ -1,0 +1,12 @@
+{
+  "batch_size": 32,
+  "dataset_name": "cifar10",
+  "device": "cpu",
+  "experiment_type": "end_to_end",
+  "loss_mode": "ce",
+  "mode": "head_ablation",
+  "model_name": "mlp",
+  "num_workers": 0,
+  "seed": 1,
+  "task_name": "image_classification"
+}

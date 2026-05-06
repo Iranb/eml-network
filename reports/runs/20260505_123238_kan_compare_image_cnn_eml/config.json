@@ -1,0 +1,15 @@
+{
+  "batch_size": 8,
+  "dataset_name": "SyntheticShapeEnergyDataset",
+  "device": "cpu",
+  "early_stop": true,
+  "min_delta": 0.01,
+  "mode": "ablation",
+  "model_name": "cnn_eml",
+  "num_workers": 0,
+  "patience": 10,
+  "seed": 0,
+  "steps": 300,
+  "task_name": "image_synthetic",
+  "warmup_enabled": true
+}

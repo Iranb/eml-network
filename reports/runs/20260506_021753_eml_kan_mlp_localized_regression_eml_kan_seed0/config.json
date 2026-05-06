@@ -1,0 +1,23 @@
+{
+  "batch_size": 256,
+  "comparison_source": "https://github.com/yu-rp/KANbeFair",
+  "dataset_name": "localized_regression",
+  "device": "cuda",
+  "eval_interval": 50,
+  "hidden_layers": 2,
+  "hidden_width": 64,
+  "input_dim": 8,
+  "lr": 0.001,
+  "min_delta": 0.001,
+  "mode": "real",
+  "model_name": "eml_kan",
+  "patience": 12,
+  "seed": 0,
+  "steps": 5000,
+  "task_name": "eml_kan_mlp_fair_comparison",
+  "task_type": "regression",
+  "test_size": 2048,
+  "train_size": 8192,
+  "val_size": 2048,
+  "weight_decay": 1e-05
+}

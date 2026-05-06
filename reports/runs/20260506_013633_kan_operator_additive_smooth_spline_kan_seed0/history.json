@@ -1,0 +1,67 @@
+[
+  {
+    "best_val_mse": 1.1648043394088745,
+    "diag_edge_output_mean": 0.017956234514713287,
+    "diag_edge_output_std": 0.09975862503051758,
+    "diag_spline_basis_mean": 0.05863599851727486,
+    "diag_spline_basis_std": 0.18882262706756592,
+    "diag_spline_edge_output_mean": 0.017956234514713287,
+    "diag_spline_edge_output_std": 0.09975862503051758,
+    "step": 1,
+    "train_mse": 0.9450333118438721,
+    "val_mse": 1.1648043394088745,
+    "warmup_eta": 0.02
+  },
+  {
+    "best_val_mse": 1.1469627618789673,
+    "diag_edge_output_mean": 0.01609455794095993,
+    "diag_edge_output_std": 0.0978199914097786,
+    "diag_spline_basis_mean": 0.058594923466444016,
+    "diag_spline_basis_std": 0.18827612698078156,
+    "diag_spline_edge_output_mean": 0.01609455794095993,
+    "diag_spline_edge_output_std": 0.0978199914097786,
+    "step": 2,
+    "train_mse": 1.2176100015640259,
+    "val_mse": 1.1469627618789673,
+    "warmup_eta": 0.04
+  },
+  {
+    "best_val_mse": 1.1330645084381104,
+    "diag_edge_output_mean": 0.016094623133540154,
+    "diag_edge_output_std": 0.09734895080327988,
+    "diag_spline_basis_mean": 0.058575015515089035,
+    "diag_spline_basis_std": 0.18872298300266266,
+    "diag_spline_edge_output_mean": 0.016094623133540154,
+    "diag_spline_edge_output_std": 0.09734895080327988,
+    "step": 3,
+    "train_mse": 0.9756728410720825,
+    "val_mse": 1.1330645084381104,
+    "warmup_eta": 0.06
+  },
+  {
+    "best_val_mse": 1.1201660633087158,
+    "diag_edge_output_mean": 0.016201205551624298,
+    "diag_edge_output_std": 0.09728579223155975,
+    "diag_spline_basis_mean": 0.05854080244898796,
+    "diag_spline_basis_std": 0.18941305577754974,
+    "diag_spline_edge_output_mean": 0.016201205551624298,
+    "diag_spline_edge_output_std": 0.09728579223155975,
+    "step": 4,
+    "train_mse": 0.8355766534805298,
+    "val_mse": 1.1201660633087158,
+    "warmup_eta": 0.08
+  },
+  {
+    "best_val_mse": 1.1076996326446533,
+    "diag_edge_output_mean": 0.016232777386903763,
+    "diag_edge_output_std": 0.09721219539642334,
+    "diag_spline_basis_mean": 0.05849450081586838,
+    "diag_spline_basis_std": 0.18887637555599213,
+    "diag_spline_edge_output_mean": 0.016232777386903763,
+    "diag_spline_edge_output_std": 0.09721219539642334,
+    "step": 5,
+    "train_mse": 0.8534489870071411,
+    "val_mse": 1.1076996326446533,
+    "warmup_eta": 0.1
+  }
+]

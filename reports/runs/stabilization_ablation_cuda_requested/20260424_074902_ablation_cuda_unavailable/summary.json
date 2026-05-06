@@ -1,0 +1,23 @@
+{
+  "cuda_available": false,
+  "dataset_name": "mixed",
+  "device": "cuda",
+  "git_commit": "19568db",
+  "hostname": "BMW-Pro.local",
+  "metrics_json": "{}",
+  "mode": "ablation",
+  "model_name": "ablation_suite",
+  "num_params": 0,
+  "platform": "macOS-26.0-arm64-arm-64bit",
+  "python_version": "3.12.12",
+  "reason": "CUDA requested but unavailable",
+  "run_dir": "reports/runs/stabilization_ablation_cuda_requested/20260424_074902_ablation_cuda_unavailable",
+  "run_id": "ablation_cuda_unavailable",
+  "seed": 0,
+  "status": "NOT RUN",
+  "task_name": "mechanism_ablation",
+  "timestamp": "2026-04-24T07:49:02Z",
+  "torch_version": "2.10.0",
+  "torchvision_version": "unavailable",
+  "trainable_params": 0
+}

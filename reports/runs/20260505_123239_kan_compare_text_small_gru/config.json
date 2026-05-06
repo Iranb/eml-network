@@ -1,0 +1,15 @@
+{
+  "batch_size": 8,
+  "dataset_name": "SyntheticTextEnergyDataset",
+  "device": "cpu",
+  "early_stop": true,
+  "min_delta": 0.01,
+  "mode": "ablation",
+  "model_name": "SmallGRULM",
+  "num_workers": 0,
+  "patience": 10,
+  "seed": 11,
+  "seq_len": 48,
+  "steps": 300,
+  "task_name": "text_synthetic"
+}

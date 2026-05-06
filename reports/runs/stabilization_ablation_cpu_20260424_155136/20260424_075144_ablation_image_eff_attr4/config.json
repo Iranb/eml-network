@@ -1,0 +1,15 @@
+{
+  "batch_size": 16,
+  "dataset_name": "SyntheticShapeEnergyDataset",
+  "device": "cpu",
+  "early_stop": false,
+  "min_delta": 0.0001,
+  "mode": "ablation",
+  "model_name": "EfficientEMLImageClassifier_attr4",
+  "num_workers": 0,
+  "patience": 20,
+  "seed": 33,
+  "steps": 50,
+  "task_name": "image_synthetic",
+  "warmup_enabled": true
+}

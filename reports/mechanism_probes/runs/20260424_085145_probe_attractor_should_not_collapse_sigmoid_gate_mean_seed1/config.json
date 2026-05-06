@@ -1,0 +1,10 @@
+{
+  "dataset_name": "attractor_should_not_collapse",
+  "device": "cpu",
+  "mechanism": "sigmoid_gate_mean",
+  "mode": "smoke",
+  "model_name": "sigmoid_gate_mean",
+  "probe_name": "attractor_should_not_collapse",
+  "seed": 1,
+  "task_name": "mechanism_probe"
+}

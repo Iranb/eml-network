@@ -1,0 +1,22 @@
+{
+  "batch_size": 512,
+  "dataset_name": "additive_smooth",
+  "device": "cuda",
+  "grid_range": 2.5,
+  "grid_size": 33,
+  "lr": 0.001,
+  "mode": "ablation",
+  "model_name": "semL_operator_replacement",
+  "seed": 2,
+  "steps": 5000,
+  "task_name": "kan_operator_replacement",
+  "train_size": 8192,
+  "val_size": 2048,
+  "weight_decay": 1e-05,
+  "widths": [
+    4,
+    64,
+    64,
+    1
+  ]
+}

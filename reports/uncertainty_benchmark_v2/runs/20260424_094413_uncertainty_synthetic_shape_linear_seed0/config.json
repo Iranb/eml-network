@@ -1,0 +1,13 @@
+{
+  "batch_size": 32,
+  "dataset_name": "synthetic_shape",
+  "device": "cpu",
+  "experiment_type": "frozen_features_uncertainty",
+  "mode": "uncertainty_benchmark",
+  "model_name": "linear",
+  "num_workers": 0,
+  "seed": 0,
+  "task_name": "image_uncertainty_selective_classification",
+  "test_size": 256,
+  "train_size": 768
+}

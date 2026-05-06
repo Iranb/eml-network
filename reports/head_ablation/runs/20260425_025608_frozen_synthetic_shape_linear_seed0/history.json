@@ -1,0 +1,305 @@
+[
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 1,
+    "train_accuracy": 0.125,
+    "train_loss": 1.6504408121109009,
+    "wall_clock_time_sec": 0.04311084747314453
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 2,
+    "train_accuracy": 0.1875,
+    "train_loss": 1.6345499753952026,
+    "wall_clock_time_sec": 0.04586195945739746
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 3,
+    "train_accuracy": 0.1875,
+    "train_loss": 1.6242725849151611,
+    "wall_clock_time_sec": 0.04773402214050293
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 4,
+    "train_accuracy": 0.15625,
+    "train_loss": 1.6277192831039429,
+    "wall_clock_time_sec": 0.05006694793701172
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 5,
+    "train_accuracy": 0.21875,
+    "train_loss": 1.6070021390914917,
+    "wall_clock_time_sec": 0.05215191841125488
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 6,
+    "train_accuracy": 0.15625,
+    "train_loss": 1.6291115283966064,
+    "wall_clock_time_sec": 0.05399799346923828
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 7,
+    "train_accuracy": 0.1875,
+    "train_loss": 1.6130787134170532,
+    "wall_clock_time_sec": 0.0555880069732666
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 8,
+    "train_accuracy": 0.25,
+    "train_loss": 1.5999466180801392,
+    "wall_clock_time_sec": 0.05881905555725098
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 9,
+    "train_accuracy": 0.1875,
+    "train_loss": 1.600208044052124,
+    "wall_clock_time_sec": 0.060662031173706055
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 10,
+    "train_accuracy": 0.15625,
+    "train_loss": 1.6172595024108887,
+    "val_accuracy": 0.234375,
+    "val_ambiguity_mean": NaN,
+    "val_brier": 0.7991455793380737,
+    "val_class_resistance_mean": NaN,
+    "val_conflict_resistance_corr": NaN,
+    "val_ece": 0.019007787108421326,
+    "val_hard_negative_drive_mean": NaN,
+    "val_hard_negative_logit_mean": 0.1207612082362175,
+    "val_hard_negative_resistance_mean": NaN,
+    "val_loss": 1.6073625087738037,
+    "val_margin_mean": -0.06385481357574463,
+    "val_nll": 1.6073625087738037,
+    "val_positive_drive_mean": NaN,
+    "val_positive_logit_mean": 0.056906409561634064,
+    "val_positive_resistance_mean": NaN,
+    "val_precision_mean": NaN,
+    "val_resistance_noise_corr": NaN,
+    "val_resistance_occlusion_corr": NaN,
+    "val_sample_uncertainty_mean": NaN,
+    "val_support_evidence_corr": NaN,
+    "val_update_gate_mean": NaN,
+    "wall_clock_time_sec": 0.062100887298583984
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 11,
+    "train_accuracy": 0.375,
+    "train_loss": 1.5869756937026978,
+    "wall_clock_time_sec": 0.06934094429016113
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 12,
+    "train_accuracy": 0.09375,
+    "train_loss": 1.6147791147232056,
+    "wall_clock_time_sec": 0.07137513160705566
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 13,
+    "train_accuracy": 0.1875,
+    "train_loss": 1.5952889919281006,
+    "wall_clock_time_sec": 0.0738821029663086
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 14,
+    "train_accuracy": 0.28125,
+    "train_loss": 1.582558512687683,
+    "wall_clock_time_sec": 0.07790899276733398
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 15,
+    "train_accuracy": 0.0625,
+    "train_loss": 1.6255234479904175,
+    "wall_clock_time_sec": 0.08010292053222656
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 16,
+    "train_accuracy": 0.0625,
+    "train_loss": 1.6160252094268799,
+    "wall_clock_time_sec": 0.08429884910583496
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 17,
+    "train_accuracy": 0.09375,
+    "train_loss": 1.64448881149292,
+    "wall_clock_time_sec": 0.08703899383544922
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 18,
+    "train_accuracy": 0.3125,
+    "train_loss": 1.6083439588546753,
+    "wall_clock_time_sec": 0.08988785743713379
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 19,
+    "train_accuracy": 0.09375,
+    "train_loss": 1.6348398923873901,
+    "wall_clock_time_sec": 0.09345388412475586
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 20,
+    "train_accuracy": 0.15625,
+    "train_loss": 1.5925434827804565,
+    "val_accuracy": 0.1875,
+    "val_ambiguity_mean": NaN,
+    "val_brier": 0.8015924692153931,
+    "val_class_resistance_mean": NaN,
+    "val_conflict_resistance_corr": NaN,
+    "val_ece": 0.03545328974723816,
+    "val_hard_negative_drive_mean": NaN,
+    "val_hard_negative_logit_mean": 0.15673579275608063,
+    "val_hard_negative_resistance_mean": NaN,
+    "val_loss": 1.6132192611694336,
+    "val_margin_mean": -0.11165972054004669,
+    "val_nll": 1.6132192611694336,
+    "val_positive_drive_mean": NaN,
+    "val_positive_logit_mean": 0.04507608339190483,
+    "val_positive_resistance_mean": NaN,
+    "val_precision_mean": NaN,
+    "val_resistance_noise_corr": NaN,
+    "val_resistance_occlusion_corr": NaN,
+    "val_sample_uncertainty_mean": NaN,
+    "val_support_evidence_corr": NaN,
+    "val_update_gate_mean": NaN,
+    "wall_clock_time_sec": 0.09591174125671387
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 21,
+    "train_accuracy": 0.09375,
+    "train_loss": 1.6089439392089844,
+    "wall_clock_time_sec": 0.1024019718170166
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 22,
+    "train_accuracy": 0.09375,
+    "train_loss": 1.6401935815811157,
+    "wall_clock_time_sec": 0.1066429615020752
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 23,
+    "train_accuracy": 0.1875,
+    "train_loss": 1.6012599468231201,
+    "wall_clock_time_sec": 0.11156606674194336
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 24,
+    "train_accuracy": 0.0625,
+    "train_loss": 1.6258857250213623,
+    "wall_clock_time_sec": 0.11986994743347168
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 25,
+    "train_accuracy": 0.125,
+    "train_loss": 1.599136233329773,
+    "wall_clock_time_sec": 0.1246798038482666
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 26,
+    "train_accuracy": 0.09375,
+    "train_loss": 1.62356698513031,
+    "wall_clock_time_sec": 0.12934589385986328
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 27,
+    "train_accuracy": 0.25,
+    "train_loss": 1.6228675842285156,
+    "wall_clock_time_sec": 0.14543390274047852
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 28,
+    "train_accuracy": 0.28125,
+    "train_loss": 1.6095974445343018,
+    "wall_clock_time_sec": 0.15169882774353027
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 29,
+    "train_accuracy": 0.25,
+    "train_loss": 1.596156358718872,
+    "wall_clock_time_sec": 0.15819883346557617
+  },
+  {
+    "learning_rate": 0.001,
+    "pairwise_loss": 0.0,
+    "step": 30,
+    "train_accuracy": 0.28125,
+    "train_loss": 1.5960414409637451,
+    "val_accuracy": 0.1953125,
+    "val_ambiguity_mean": NaN,
+    "val_brier": 0.8020454049110413,
+    "val_class_resistance_mean": NaN,
+    "val_conflict_resistance_corr": NaN,
+    "val_ece": 0.028702452778816223,
+    "val_hard_negative_drive_mean": NaN,
+    "val_hard_negative_logit_mean": 0.1539696455001831,
+    "val_hard_negative_resistance_mean": NaN,
+    "val_loss": 1.614547848701477,
+    "val_margin_mean": -0.10689765959978104,
+    "val_nll": 1.614547848701477,
+    "val_positive_drive_mean": NaN,
+    "val_positive_logit_mean": 0.047071970999240875,
+    "val_positive_resistance_mean": NaN,
+    "val_precision_mean": NaN,
+    "val_resistance_noise_corr": NaN,
+    "val_resistance_occlusion_corr": NaN,
+    "val_sample_uncertainty_mean": NaN,
+    "val_support_evidence_corr": NaN,
+    "val_update_gate_mean": NaN,
+    "wall_clock_time_sec": 0.16319584846496582
+  }
+]

@@ -1,0 +1,12 @@
+{
+  "dataset_name": "synthetic_probe_tensors",
+  "device": "cpu",
+  "mode": "ablation",
+  "model_name": "ablation_gate_sigmoid_seed0",
+  "responsibility_distribution_mode": "standard",
+  "responsibility_mode": false,
+  "seed": 0,
+  "task_name": "mechanism_probe",
+  "update_mode": "sigmoid",
+  "use_null": false
+}

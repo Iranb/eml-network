@@ -1,0 +1,9 @@
+{
+  "dataset_name": "synthetic_probe_tensors",
+  "device": "cpu",
+  "mode": "ablation",
+  "model_name": "all_noise_should_choose_null",
+  "probe_name": "all_noise_should_choose_null",
+  "seed": 61,
+  "task_name": "mechanism_probe"
+}

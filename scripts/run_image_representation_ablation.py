@@ -20,6 +20,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from eml_mnist.experiment_utils import ExperimentLogger
+from eml_mnist.eml_edge_network import EMLEdgeImageClassifier
 from eml_mnist.training import resolve_device, set_seed
 from run_eml_validation_suite import _build_cnn_model, _build_efficient_image, _build_old_image_model, _train_image_model
 
@@ -228,6 +229,7 @@ def main() -> None:
     for seed in args.seeds:
         specs = [
             ("cnn_eml_workers0", "cnn_eml_workers0", lambda: _build_cnn_model(args.image_size), True, False),
+            ("eml_edge_kan", "EMLEdgeImageClassifier_kan_style", lambda: EMLEdgeImageClassifier(num_classes=5, input_channels=3, state_dim=32, edge_width=32), True, False),
             ("pure_eml_workers0", "pure_eml_workers0", lambda: _build_old_image_model("pure_eml", args.image_size), True, False),
             ("efficient_baseline", "EfficientEMLImageClassifier_baseline", lambda: _build_efficient_image(4, 3, sensor_bypass=False), True, False),
             ("efficient_centered_ambiguity", "EfficientEMLImageClassifier_centered_ambiguity", lambda: _build_efficient_image(4, 3, sensor_bypass=False), True, False),

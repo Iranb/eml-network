@@ -1,0 +1,23 @@
+{
+  "cuda_available": false,
+  "dataset_name": "mixed",
+  "device": "cpu",
+  "git_commit": "9ce7b7d",
+  "hostname": "Mac-mini.local",
+  "metrics_json": "{}",
+  "mode": "smoke",
+  "model_name": "all_supported_cells",
+  "num_params": 0,
+  "platform": "macOS-15.1-arm64-arm-64bit",
+  "python_version": "3.12.7",
+  "reason": "smoke mode: not requested in this mode",
+  "run_dir": "reports/runs/20260506_050535_full_seeded_ablation",
+  "run_id": "full_seeded_ablation",
+  "seed": 0,
+  "status": "NOT RUN",
+  "task_name": "mechanism_ablation",
+  "timestamp": "2026-05-06T05:05:35Z",
+  "torch_version": "2.10.0",
+  "torchvision_version": "0.25.0",
+  "trainable_params": 0
+}

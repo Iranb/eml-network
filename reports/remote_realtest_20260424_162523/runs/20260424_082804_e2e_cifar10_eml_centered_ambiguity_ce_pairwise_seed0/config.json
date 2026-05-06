@@ -1,0 +1,17 @@
+{
+  "batch_size": 64,
+  "dataset_name": "cifar10",
+  "device": "cuda",
+  "experiment_type": "end_to_end",
+  "head_name": "eml_centered_ambiguity",
+  "loss_mode": "ce_pairwise",
+  "lr": 0.001,
+  "mode": "head_ablation",
+  "model_name": "eml_centered_ambiguity",
+  "pairwise_margin": 0.0,
+  "pairwise_weight": 0.05,
+  "seed": 0,
+  "steps": 200,
+  "task_name": "image_classification",
+  "use_eml_residual_bank": false
+}

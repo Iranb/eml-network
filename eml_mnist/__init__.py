@@ -1,4 +1,5 @@
 from .eml_image_field import EMLImageFieldClassifier, EMLImageFieldEncoder
+from .eml_edge_network import EMLEdgeFunctionLayer, EMLEdgeFunctionNetwork, EMLEdgeImageClassifier, EMLEdgeTextLM
 from .eml_repr_image import EfficientEMLImageClassifier, EfficientEMLImageEncoder
 from .eml_repr_text import EfficientEMLTextEncoder, EfficientEMLTextGenerationHead
 from .eml_text_field import EMLTextFieldEncoder, EMLTextFieldGenerationHead
@@ -69,6 +70,10 @@ __all__ = [
     "EfficientEMLImageEncoder",
     "EfficientEMLTextEncoder",
     "EfficientEMLTextGenerationHead",
+    "EMLEdgeFunctionLayer",
+    "EMLEdgeFunctionNetwork",
+    "EMLEdgeImageClassifier",
+    "EMLEdgeTextLM",
     "EMLImageFieldClassifier",
     "EMLImageFieldEncoder",
     "EMLTextFieldEncoder",

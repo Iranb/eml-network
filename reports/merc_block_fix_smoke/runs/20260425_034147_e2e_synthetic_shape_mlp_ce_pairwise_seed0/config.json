@@ -1,0 +1,12 @@
+{
+  "batch_size": 32,
+  "dataset_name": "synthetic_shape",
+  "device": "cpu",
+  "experiment_type": "end_to_end",
+  "loss_mode": "ce_pairwise",
+  "mode": "head_ablation",
+  "model_name": "mlp",
+  "num_workers": 0,
+  "seed": 0,
+  "task_name": "image_classification"
+}

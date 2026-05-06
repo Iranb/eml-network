@@ -1,0 +1,23 @@
+{
+  "cuda_available": false,
+  "dataset_name": "KAN paper AI+Science tasks",
+  "device": "cpu",
+  "git_commit": "9ce7b7d",
+  "hostname": "Mac-mini.local",
+  "metrics_json": "{}",
+  "mode": "ablation",
+  "model_name": "KAN_arxiv_2404_19756",
+  "num_params": 0,
+  "platform": "macOS-15.1-arm64-arm-64bit",
+  "python_version": "3.12.7",
+  "reason": "User requested no local KAN experiment; comparing against reported paper results only.",
+  "run_dir": "reports/runs/20260505_123159_kan_paper_reference",
+  "run_id": "kan_paper_reference",
+  "seed": 0,
+  "status": "NOT RUN",
+  "task_name": "paper_reference",
+  "timestamp": "2026-05-05T12:32:00Z",
+  "torch_version": "2.10.0",
+  "torchvision_version": "0.25.0",
+  "trainable_params": 0
+}

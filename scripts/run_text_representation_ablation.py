@@ -22,6 +22,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from eml_mnist.experiment_utils import ExperimentLogger
+from eml_mnist.eml_edge_network import EMLEdgeTextLM
 from eml_mnist.text_backbones import EMLTextBackbone
 from eml_mnist.text_codecs import CharVocabulary
 from eml_mnist.text_heads import LocalTextGenerationHead
@@ -293,6 +294,7 @@ def main() -> None:
     for seed in args.seeds:
         specs = [
             ("local_causal_conv", "LocalCausalConvLM", lambda: LocalCausalConvLM(len(vocab), vocab.pad_id), False),
+            ("eml_edge_kan_text", "EMLEdgeTextLM_kan_style", lambda: EMLEdgeTextLM(len(vocab), vocab.pad_id), False),
             ("small_gru", "SmallGRULM", lambda: SmallGRULM(len(vocab), vocab.pad_id), False),
             ("old_eml_text_backbone", "EMLTextBackbone", lambda: OldEMLTextLM(len(vocab), vocab.pad_id), False),
             ("efficient_window8", "EfficientEMLTextEncoder_window8", lambda: EfficientTextLM(len(vocab), vocab.pad_id, window_size=8, enable_composition=False, enable_attractor=False), False),
